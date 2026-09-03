@@ -1,4 +1,14 @@
-# Sourcetrail
+# Code View
+
+This fork revamps Sourcetrail into a local, browser-based Python code-flow canvas. Start with the [Code View guide](CODE_VIEW.md), or run the bundled example:
+
+```sh
+./script/code-view.sh "$PWD/tests/fixtures/tic-tac-toe"
+```
+
+The archived Sourcetrail documentation remains below for historical reference.
+
+## Legacy Sourcetrail
 
 *__Important Note:__ This project was archived by the original autors and maintainers of Sourcetrail by the end of 2021. If you want to know more about this decision, read more on our [blog](https://web.archive.org/web/20211119200517/https://www.sourcetrail.com/blog/).*
 

@@ -65,6 +65,15 @@ Makefile
 CMakeLists.txt.user*
 /__pycache__/
 
+# Code View service outputs
+/services/web-canvas/node_modules/
+/services/web-canvas/dist/
+/services/web-canvas/coverage/
+/services/web-canvas/test-results/
+/services/local-server/build/
+__pycache__/
+/.code-view/
+
 /deployment/windows/wixSetup/bin
 /deployment/windows/wixSetup/build
 /deployment/windows/wixSetup/CustomActions/UninstallRemoveLogFolder/bin

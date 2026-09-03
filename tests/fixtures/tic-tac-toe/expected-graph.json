@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "code-view.graph/v1",
+  "canonicalSha256": "702cd7fe433d5ee6ce0bb4e9aa3d9886eca03cfcaa313814b814d85459eb1620",
+  "counts": {
+    "nodes": {
+      "class": 2,
+      "external": 7,
+      "file": 7,
+      "function": 3,
+      "method": 8,
+      "module": 7,
+      "package": 1,
+      "repository": 1,
+      "unresolved": 1,
+      "variable": 25
+    },
+    "edges": {
+      "api_calls": 6,
+      "calls": 17,
+      "constructs": 2,
+      "contains": 53,
+      "imports": 7,
+      "reads": 29,
+      "type_uses": 1,
+      "writes": 27
+    }
+  },
+  "nodes": [
+    "class|tictactoe.board.Board",
+    "class|tictactoe.game.Game",
+    "external|builtins.ValueError",
+    "external|builtins.all",
+    "external|builtins.any",
+    "external|builtins.enumerate",
+    "external|builtins.getattr",
+    "external|random",
+    "external|random.choice",
+    "file|file:main.py",
+    "file|file:tictactoe/__init__.py",
+    "file|file:tictactoe/board.py",
+    "file|file:tictactoe/cli.py",
+    "file|file:tictactoe/game.py",
+    "file|file:tictactoe/players.py",
+    "file|file:tictactoe/unused.py",
+    "function|tictactoe.cli.run",
+    "function|tictactoe.players.choose_move",
+    "function|tictactoe.unused.debug_board",
+    "method|tictactoe.board.Board.__init__",
+    "method|tictactoe.board.Board.empty_cells",
+    "method|tictactoe.board.Board.has_winner",
+    "method|tictactoe.board.Board.is_full",
+    "method|tictactoe.board.Board.place",
+    "method|tictactoe.game.Game.__init__",
+    "method|tictactoe.game.Game.is_over",
+    "method|tictactoe.game.Game.play",
+    "module|main",
+    "module|tictactoe",
+    "module|tictactoe.board",
+    "module|tictactoe.cli",
+    "module|tictactoe.game",
+    "module|tictactoe.players",
+    "module|tictactoe.unused",
+    "unresolved|tictactoe.unused::<unresolved>@6:12:getattr(board, formatter_name)"
+  ],
+  "calls": [
+    "main -> tictactoe.cli.run",
+    "tictactoe.board.Board.empty_cells -> builtins.enumerate",
+    "tictactoe.board.Board.has_winner -> builtins.any",
+    "tictactoe.board.Board.is_full -> builtins.all",
+    "tictactoe.board.Board.place -> builtins.ValueError",
+    "tictactoe.cli.run -> tictactoe.game.Game.__init__",
+    "tictactoe.cli.run -> tictactoe.game.Game.is_over",
+    "tictactoe.cli.run -> tictactoe.game.Game.play",
+    "tictactoe.cli.run -> tictactoe.players.choose_move",
+    "tictactoe.game.Game.__init__ -> tictactoe.board.Board.__init__",
+    "tictactoe.game.Game.is_over -> tictactoe.board.Board.has_winner",
+    "tictactoe.game.Game.is_over -> tictactoe.board.Board.is_full",
+    "tictactoe.game.Game.play -> tictactoe.board.Board.place",
+    "tictactoe.players.choose_move -> random.choice",
+    "tictactoe.players.choose_move -> tictactoe.board.Board.empty_cells",
+    "tictactoe.unused.debug_board -> builtins.getattr",
+    "tictactoe.unused.debug_board -> tictactoe.unused::<unresolved>@6:12:getattr(board, formatter_name)"
+  ],
+  "imports": [
+    "main -> tictactoe.cli.run",
+    "tictactoe -> tictactoe.game.Game",
+    "tictactoe.cli -> tictactoe.game.Game",
+    "tictactoe.cli -> tictactoe.players.choose_move",
+    "tictactoe.game -> tictactoe.board.Board",
+    "tictactoe.players -> random",
+    "tictactoe.players -> tictactoe.board.Board"
+  ],
+  "constructs": [
+    "tictactoe.cli.run -> tictactoe.game.Game",
+    "tictactoe.game.Game.__init__ -> tictactoe.board.Board"
+  ],
+  "typeUses": [
+    "tictactoe.players.choose_move -> tictactoe.board.Board"
+  ],
+  "unresolved": [
+    {
+      "qualifiedName": "tictactoe.unused::<unresolved>@6:12:getattr(board, formatter_name)",
+      "path": "tictactoe/unused.py",
+      "line": 6,
+      "reason": "call target cannot be resolved statically"
+    }
+  ]
+}

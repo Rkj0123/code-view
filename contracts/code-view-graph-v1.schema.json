@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-view.local/contracts/code-view-graph-v1.schema.json",
+  "title": "Code View language-neutral graph",
+  "type": "object",
+  "required": ["schemaVersion", "project", "nodes", "edges", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const": "code-view.graph/v1"},
+    "project": {
+      "type": "object",
+      "required": ["root", "languages", "entryNodeId", "entryReachableNodeIds"],
+      "additionalProperties": false,
+      "properties": {
+        "root": {"const": "."},
+        "languages": {"type": "array", "items": {"type": "string"}},
+        "entryNodeId": {"type": ["string", "null"]},
+        "entryReachableNodeIds": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagnostic"}
+    }
+  },
+  "$defs": {
+    "position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "range": {
+      "type": ["object", "null"],
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": {"$ref": "#/$defs/position"},
+        "end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "language", "name", "qualifiedName", "path", "range", "signature", "docstring", "external", "unresolved", "reason", "modifiers"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^n_[0-9a-f]{24}$"},
+        "kind": {"enum": ["repository", "package", "file", "module", "class", "function", "method", "variable", "external", "unresolved"]},
+        "language": {"type": ["string", "null"]},
+        "name": {"type": "string"},
+        "qualifiedName": {"type": "string"},
+        "path": {"type": ["string", "null"]},
+        "range": {"$ref": "#/$defs/range"},
+        "signature": {"type": ["string", "null"]},
+        "docstring": {"type": ["string", "null"]},
+        "external": {"type": "boolean"},
+        "unresolved": {"type": "boolean"},
+        "reason": {"type": ["string", "null"]},
+        "modifiers": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "kind", "language", "source", "target", "path", "range", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^e_[0-9a-f]{24}$"},
+        "kind": {"enum": ["contains", "imports", "calls", "inherits", "constructs", "reads", "writes", "decorates", "type_uses", "api_calls", "test_covers"]},
+        "language": {"type": "string"},
+        "source": {"type": "string"},
+        "target": {"type": "string"},
+        "path": {"type": ["string", "null"]},
+        "range": {"$ref": "#/$defs/range"},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "message", "path", "range"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"type": "string"},
+        "severity": {"enum": ["info", "warning", "error"]},
+        "message": {"type": "string"},
+        "path": {"type": ["string", "null"]},
+        "range": {"$ref": "#/$defs/range"}
+      }
+    }
+  }
+}

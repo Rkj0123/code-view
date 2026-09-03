@@ -1,0 +1,14 @@
+.flow-view { position: absolute; inset: 0; }
+.flow-view .flow-view__canvas { inset: 52px 0 60px; }
+.flow-view__scope { position: absolute; z-index: 5; top: 12px; left: 12px; display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+.flow-view__scope button { min-height: 28px; padding: 4px 9px; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.flow-view__scope button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+.flow-view__scope button:disabled { opacity: .45; cursor: default; }
+.flow-view__relationships { position: absolute; z-index: 5; top: 14px; right: 12px; display: flex; max-width: min(44%, 380px); align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.flow-view__relationships select { width: 100%; min-width: 0; height: 32px; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--text); text-overflow: ellipsis; }
+.flow-view__hint { position: absolute; z-index: 3; right: 14px; bottom: 38px; left: 14px; margin: 0; color: var(--muted); font-size: 10px; pointer-events: none; }
+@media (max-width: 520px) {
+  .flow-view__scope button { padding-inline: 6px; font-size: 10px; }
+  .flow-view__relationships { max-width: 39%; gap: 4px; font-size: 10px; }
+  .flow-view__hint { max-width: 280px; font-size: 9px; }
+}
