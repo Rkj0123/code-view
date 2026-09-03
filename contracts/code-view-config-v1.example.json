@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "entry": {
+    "file": "main.py",
+    "symbol": "main",
+    "command": {"argv": ["python3", "main.py"], "mode": "manual"}
+  },
+  "languages": ["python"],
+  "index": {
+    "tests": "exclude",
+    "modules": "hide",
+    "externalPackages": "collapse",
+    "exclude": ["generated/**"]
+  },
+  "canvas": {
+    "initialView": "entry-focus",
+    "relationships": {
+      "contains": true,
+      "imports": true,
+      "calls": true,
+      "inherits": true,
+      "constructs": true,
+      "reads": true,
+      "writes": true,
+      "decorates": true,
+      "type_uses": true,
+      "api_calls": true,
+      "test_covers": false
+    }
+  },
+  "git": {"base": "HEAD"}
+}

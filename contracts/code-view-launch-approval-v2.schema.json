@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-view.local/contracts/code-view-launch-approval-v2.schema.json",
+  "title": "Code View displayed-command approval v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generation"],
+  "properties": {
+    "schemaVersion": {"const": "code-view.launch-approval/v2"},
+    "generation": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+  }
+}
