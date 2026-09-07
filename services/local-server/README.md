@@ -1,8 +1,8 @@
 # Code View local server
 
 This service is the loopback-only boundary between the static Python analyzer and
-the browser canvas. It does not link the legacy Qt GUI. It reuses Sourcetrail's
-`NodeKind` and `Edge` semantics only through `LegacySemantics.cpp`.
+the browser canvas. It keeps the graph contract independent from the UI and
+contains the compatibility mapping in `LegacySemantics.cpp`.
 
 ## Build and run
 
@@ -269,14 +269,14 @@ python3 services/local-server/evals/reliability.py
 ```
 
 The fast gate covers strict graph/config import, reversed ranges, boundary reasons,
-legacy conversions, complete views, stale snapshot merging, and contained regular-file reads.
+compatibility conversions, complete views, stale snapshot merging, and contained regular-file reads.
 The full local suite also covers live edit/error/fix behavior, start approval/stop/shutdown, editor argv plus source
 checksum, branch/commit/invalid/no-HEAD Git cases, graph snapshot comparison,
 and live loopback Host/Origin/bearer/CSP/static isolation. The local HTTP gate
 must be allowed to bind one ephemeral `127.0.0.1` port.
 
 The periodic eval indexes the frozen Python fixture, imports the exact NDJSON,
-checks complete repository and entry views, diagnostics, and legacy conversion,
+checks complete repository and entry views, diagnostics, and compatibility conversion,
 and requires a score of 5/5. The 10k-SLOC performance eval runs five fresh
 analyzer/import processes and measures the actual C++ `GraphSnapshot::node`
 adjacency path.

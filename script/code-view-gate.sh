@@ -12,12 +12,14 @@ fi
 
 python3 -m unittest discover -s "$root/services/python-analyzer" -p 'test_*.py' &
 analyzer_pid=$!
+python3 -m unittest discover -s "$root/tests/docs" -p 'test_*.py' &
+docs_pid=$!
 npm test --prefix "$root/services/web-canvas" -- --reporter=dot &
 web_pid=$!
 "$host_test" --gate &
 host_pid=$!
 failed=0
-for pid in "$analyzer_pid" "$web_pid" "$host_pid"; do
+for pid in "$analyzer_pid" "$docs_pid" "$web_pid" "$host_pid"; do
     if ! wait "$pid"; then failed=1; fi
 done
 exit "$failed"
