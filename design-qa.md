@@ -6,16 +6,16 @@ No actionable P0, P1, or P2 findings remain.
 
 ## Evidence
 
-- Source visual truth: `docs/readme/user_interface.png`, 2258 × 1354 px. It is the original Sourcetrail macOS/C++ screen.
-- Rendered implementation: `/tmp/code-view-revamp/critique/python-flow-light.png` and `/tmp/code-view-revamp/critique/ten-files-flow-light.png`, each 1280 × 720 px at a 1280 × 720 CSS viewport and device scale 1. Dark captures with the same size are beside them.
+- Source visual truth: `docs/readme/user_interface.png`, 2258 × 1354 px. It is the supplied baseline graph/source screen.
+- Rendered implementation: `docs/images/01-entry-focus-light.png` and `docs/images/02-repository-overview-dark.png`, each 1440 × 900 px at a 1440 × 900 CSS viewport and device scale 1. The other settled captures use the same size.
 - State: `Game.play` and generated ten-file `main.main`, Selected flow, read-only source open, light and dark themes. Overview captures cover All connections.
 - Normalization: compared the graph/source content regions, not old macOS window chrome. The source and implementation have different aspect ratios and languages, so no pixel-distance score was used.
-- Full-view comparison: the reference and all six current screenshots were opened together. The final three-column composition preserves the useful Sourcetrail pattern: callers left, selection centered, dependencies right, ownership boundaries around symbol rows, and source on the right.
+- Full-view comparison: the baseline and all six current screenshots were opened together. The final three-column composition preserves the useful reference pattern: callers left, selection centered, dependencies right, ownership boundaries around symbol rows, and source on the right.
 - Focused-region comparison: labels, arrow endpoints, file/class headers, source locations, status counts, and graph controls were readable in the full-size captures, so a separate crop was unnecessary. A live check loaded `tictactoe/cli.py:9:12` for `run → Game` and showed `game = Game()`.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: native sans-serif controls plus monospaced code/symbol labels preserve Sourcetrail's functional hierarchy. Small lane labels, file headers, symbols, source, and status remain legible at the tested viewport.
+- Fonts and typography: native sans-serif controls plus monospaced code/symbol labels preserve the intended functional hierarchy. Small lane labels, file headers, symbols, source, and status remain legible at the tested viewport.
 - Spacing and layout rhythm: compact rectangular boundaries, clear column gutters, reserved top/bottom controls, and stable source-panel width. The ten-file trace extends below the viewport by design and remains reachable with pan/zoom; it is not shrunk until labels become unreadable.
 - Colors and visual tokens: quiet gray boundaries, amber calls/functions, blue variables/inbound flow, white light canvas, and near-black dark canvas. Direction does not rely on color alone; lanes, arrowheads, labels, and the Inspector repeat it.
 - Image quality and asset fidelity: the canvas is code-native vector UI with installed Lucide icons, as appropriate for an interactive code graph. No source product imagery or branding asset was replaced. PNG exports and captured lines/text are sharp at device scale 1.

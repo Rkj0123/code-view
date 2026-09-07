@@ -1,260 +1,244 @@
 # Code View
 
-This fork revamps Sourcetrail into a local, browser-based Python code-flow canvas. Start with the [Code View guide](CODE_VIEW.md), or run the bundled example:
+Code View is a local, read-only code-flow canvas for understanding Python
+repositories. Point it at a repository and see how files, classes, functions,
+variables, imports, calls, inheritance, reads, writes, decorators, type use,
+API calls, source locations, and local Git changes connect.
+
+Everything runs on your Mac. Static analysis parses Python source without
+importing or executing the repository.
+
+[Quick start](#quick-start) · [Usage guide](docs/USAGE.md) ·
+[Technical details](docs/TECHNICAL.md) · [AI-agent setup](docs/AI_AGENT_SETUP.md)
+
+![Code View showing callers on the left, a selected Python symbol in the middle, and dependencies on the right](docs/images/01-entry-focus-light.png)
+
+*Selected flow keeps the symbol you are studying in the middle and makes each
+connection easy to follow.*
+
+## What Code View does
+
+| Need | Use Code View |
+| --- | --- |
+| Find who uses a symbol | Select it and inspect inbound consumers. |
+| Understand dependencies | Read the outbound column and follow its arrows. |
+| See the whole project | Open `Repository`, then choose `All connections`. |
+| Inspect exact evidence | Open a relationship or source occurrence in the Inspector. |
+| Make a dense graph readable | Collapse boundaries, filter categories, or choose `Selected flow`. |
+| Review local changes | Compare `WORKTREE` with a local branch or commit. |
+| Run a repository command | Opt in explicitly; execution is disabled by default and requires three guards. |
+
+## Requirements
+
+The current release supports macOS and Python repositories. Install Homebrew,
+then install CMake 3.21+, Ninja, Qt 6.8+ with Core/Network/HttpServer, Node.js,
+npm, and Python 3:
+
+If `brew --version` fails, install Homebrew with its official installer, follow
+the PATH instruction it prints, and open a new Terminal window:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+```sh
+brew install cmake ninja qthttpserver node python
+```
+
+If a package is already installed, Homebrew reports that it is current.
+
+The screenshots in this repository use Git LFS. Install it if your clone shows
+an image pointer instead of an image:
+
+```sh
+brew install git-lfs
+git lfs install
+```
+
+## Quick start
+
+Follow these steps from a terminal. The bundled launcher builds the browser
+canvas and local host for you.
+
+### 1. Open the Code View checkout
+
+```sh
+cd /absolute/path/to/code-view
+```
+
+Use the directory containing `script/code-view.sh`, `services/`, and `tests/`.
+
+### 2. Verify the tools
+
+```sh
+cmake --version
+ninja --version
+node --version
+npm --version
+python3 --version
+```
+
+### 3. Start the bundled example
 
 ```sh
 ./script/code-view.sh "$PWD/tests/fixtures/tic-tac-toe"
 ```
 
-The archived Sourcetrail documentation remains below for historical reference.
+The first run installs locked web dependencies, builds the canvas, configures
+and builds the local host, indexes the fixture, and starts the server. Later
+runs reuse build outputs.
 
-## Legacy Sourcetrail
+### 4. Open the browser
 
-*__Important Note:__ This project was archived by the original autors and maintainers of Sourcetrail by the end of 2021. If you want to know more about this decision, read more on our [blog](https://web.archive.org/web/20211119200517/https://www.sourcetrail.com/blog/).*
+The host prints one compact JSON startup record. Copy the complete `url` value,
+including `?token=...`, into a browser on the same Mac:
 
-Sourcetrail is a free and open-source cross-platform source explorer that helps you get productive on unfamiliar source code.
+```text
+http://127.0.0.1:53211/?token=YOUR_SESSION_TOKEN
+```
 
-Windows: [![Build status](https://ci.appveyor.com/api/projects/status/0c258a2opn3loyc2/branch/master?svg=true)](https://ci.appveyor.com/project/mlangkabel/sourcetrail/branch/master)
+The token bootstraps that tab. Code View retains it in tab-scoped storage and
+removes it from the visible address bar.
 
-Linux: [![Build Status](https://travis-ci.org/CoatiSoftware/Sourcetrail.svg?branch=master)](https://travis-ci.org/CoatiSoftware/Sourcetrail)
+### 5. Explore the example
 
-__Links__
-* [Download](https://github.com/CoatiSoftware/Sourcetrail/releases)
-* [Quick Start Guide](DOCUMENTATION.md#getting-started)
-* [Documentation](DOCUMENTATION.md)
-* [Changelog](CHANGELOG.md)
+1. Leave `Repository` selected for the complete indexed graph.
+2. Select `Entry Focus` for the statically reachable entry flow.
+3. Search for `Game.play`.
+4. Choose `Selected flow` to place callers left, the selected symbol in the
+   middle, and dependencies right.
+5. Select an arrow or use `Trace` to inspect its relationship and source range.
 
-!["Sourcetrail User Interface"](docs/readme/user_interface.png "Sourcetrail User Interface")
+![Repository overview with compact file and class boundaries](docs/images/02-repository-overview-dark.png)
 
-Sourcetrail is:
-* free
-* working offline
-* operating on Windows, macOS and Linux
-* supporting C, C++, Java and Python
-* offering an SDK ([SourcetrailDB](https://github.com/CoatiSoftware/SourcetrailDB)) to write custom language extensions
+*Repository view keeps the full filtered graph available. Pan and zoom when a
+large repository extends beyond the viewport.*
 
-## Sourcetrail on Patreon
+### 6. Analyze your repository
 
-The open-source development and regular software releases are made possible entirely by the support of [these awesome patrons](SPONSORS.md)!
+Press `Ctrl-C` in the terminal, then run:
 
-## Using Sourcetrail
+```sh
+./script/code-view.sh /absolute/path/to/your/python-repository
+```
 
-To setup Sourcetrail on your machine, you can either download the respective build for your operating system from our list of [Releases](https://github.com/CoatiSoftware/Sourcetrail/releases) and install it on your machine, or use one of the following package managers:
+Copy the new tokenized URL into the browser. Indexing does not run your
+application.
 
-* Use the [Chocolatey package](https://chocolatey.org/packages/sourcetrail) with `choco install sourcetrail`
+### 7. Stop Code View
 
-After your installation is complete, follow our [Quick Start Guide](DOCUMENTATION.md#getting-started) to get to know Sourcetrail.
+Return to the host terminal and press `Ctrl-C`. The host shuts down its owned
+workers before exiting.
 
-## How to Report Issues
+## The 60-second tour
 
-You can post all your feature requests and bug reports on our [issue tracker](https://github.com/CoatiSoftware/Sourcetrail/issues).
+- `Repository` shows every indexed node and relationship in the current filters.
+- `Entry Focus` shows the complete statically reachable flow from the detected
+  or configured entry.
+- `All connections` restores every relationship in the filtered graph.
+- `Selected flow` creates a readable caller/selection/dependency view.
+- `Trace` reaches every filtered relationship, including those outside the
+  focused flow.
+- The Inspector shows qualified names, source, occurrences, boundary reasons,
+  and Git evidence.
+- The filter button controls node kinds, relationship kinds, tests, and changed
+  only mode.
+- `Fit` shows an overview; `Reset` restores the viewport.
+- JSON and PNG export use the current visible scope.
+- The sun/moon button switches and remembers light/dark mode locally.
 
-### Reporting
+![Inspector showing a selected relationship and its source evidence](docs/images/03-inspector-light.png)
 
-Use the following template:
+*The Inspector keeps the selected symbol's exact source and relationship evidence beside the canvas.*
 
-* platform version:
-* Sourcetrail version:
-* description of the problem:
-* steps to reproduce the problem:
+![Filter panel showing node and relationship visibility controls](docs/images/04-filters-light.png)
 
-### Supporting
+*Filters change what is visible without changing the canonical graph.*
 
-If you want to support a certain feature request or you have the same bug that another user already reported, please let us know:
-* post a comment with "+1" to the issue
-* or send an email to support@sourcetrail.com with the issue ID
+## Default visibility
 
-## How to Contribute
+- tests excluded
+- package and module boundaries hidden
+- external packages collapsed
+- every canonical relationship enabled except `test_covers`
+- source viewing enabled
+- command execution disabled
+- system light/dark preference used on first launch
 
-* Please read and follow the steps in [CONTRIBUTING.md](CONTRIBUTING.md) file.
-* You may want to look out for issues labeled [good first issue](https://github.com/CoatiSoftware/Sourcetrail/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) to find some initial tasks to tackle.
-* If you are looking for more information about Sourcetrail software development, please refer to our [wiki](https://github.com/CoatiSoftware/Sourcetrail/wiki).
+Change these choices in the filter panel or in `code-view.json`.
 
-# How to Build
+## Configure an entry point
 
-Building Sourcetrail requires several dependencies to be in place on your machine. However, our CMake based setup allows to disable indexing support for specific languages which reduces the number of dependencies to a minimum.
+Create `code-view.json` in the repository root. The smallest useful file is:
 
-## Building the Base Application
+```json
+{
+  "schemaVersion": 1,
+  "entry": "main.py"
+}
+```
 
-### Required Tools
+The full strict schema is in
+[`contracts/code-view-config-v1.schema.json`](contracts/code-view-config-v1.schema.json).
+An explicit `entry` wins over an accepted `startCommand` entry hint and over
+automatic detection. `index.tests: "include"` enables test files;
+`index.modules: "show"` reveals module/package boundaries. Unknown keys are
+rejected.
 
-* __CMake v3.12 (required for Windows, Linux and MacOS)__
-    * __Reason__: Used to generate a build configuration for your build system
-    * __Download__: https://cmake.org/download
-
-* __Git (required for Windows, Linux and MacOS)__
-    * __Reason__: Used for version control and to automatically generate the Sourcetrail version number from commits and tags
-    * __Download__: https://git-scm.com/download
-    * __Remarks__: Make sure `git` is added to your `PATH` environment variable before running CMake
-
-* __Visual Studio (required for Windows)__
-    * __Reason__: Used for building Sourcetrail
-    * __Download__: https://visualstudio.microsoft.com/downloads/
-
-* __ccache (optional for Linux and MacOS)__
-    * __Reason__: Used to speed up rebuilds if found in `PATH`
-    * __Download__: https://ccache.dev/download.html
-
-### Required dependencies
-
-* __Boost 1.67__
-    * __Reason__: Used for file system access and interprocess communication
-    * __Prebuilt Download for Windows__: https://sourceforge.net/projects/boost/files/boost-binaries/
-    * __Building for Unix__:
-        ```
-        $ ./bootstrap.sh --with-libraries=filesystem,program_options,system,date_time
-        $ ./b2 --link=static --variant=release --threading=multi --runtime-link=static --cxxflags=-fPIC
-        ```
-
-* __Qt 5.12.3__
-    * __Reason__: Used for rendering the GUI and for starting additional (indexer) processes.
-    * __Prebuilt Download__: http://download.qt.io/official_releases/qt/
-
-### Building
-
-#### On Windows
-* To set up your build environment run:
-    ```
-    $ git clone https://github.com/CoatiSoftware/Sourcetrail.git
-    $ cd Sourcetrail
-    $ mkdir -p build/win64
-    $ cd build/win64
-    $ cmake -G "Visual Studio 15 2017 Win64" -DBOOST_ROOT=<path/to/boost_1_67_0> -DQt5_DIR=<path/to/Qt/version/platform/compiler/lib/cmake/Qt5> ../..
-    ```
-    _Hint: If you are using the CMake GUI, we recommend that you activate advanced mode. Also you may be required to add some of the defines via the "Add Entry" button._
-
-* After generating the build configuration, just open the Sourcetrail.sln file that was generated by CMake and build the Sourcetrail project.
-
-#### On Unix
-
-* To set up your build environment run:
-    ```
-    $ cd Sourcetrail
-    $ mkdir -p build/Release
-    $ cd build/Release
-    $ cmake -DCMAKE_BUILD_TYPE="Release" -DBOOST_ROOT=<path/to/boost_1_67_0> -DQt5_DIR=<path/to/Qt/version/platform/compiler/lib/cmake/Qt5> ../..
-    ```
-* Now start the build with:
-    ```
-    $ make Sourcetrail
-    ```
-
-### Running
-
-* Run Sourcetrail from within the build directory. During execution Sourcetrail needs resources from `bin/app/data` and `bin/app/user`. CMake creates symlinks within the build directory that make these directories accessible.
-
-
-## Enable C/C++ Language Support
-
-### Required dependencies
-
-* __LLVM/Clang 11.0.0__
-    * __Reason__: Used for running the preprocessor on the indexed source code, building and traversing an Abstract Syntax Tree and generating error messages.
-    * __Building__: Make sure to check out the correct tag: `git checkout llvmorg-11.0.0`
-    * __Building for Windows__: Follow [these steps](https://clang.llvm.org/get_started.html) to build the project. Run the cmake command exactly as described.
-    * __Building for Unix__: Follow this [installation guide](http://clang.llvm.org/docs/LibASTMatchersTutorial.html) to build the project. Make sure to build with `-DLLVM_ENABLE_RTTI=ON`.
-
-### Building
-
-* Run CMake with these additional options:
-    ```
-    -DClang_DIR=<path/to/llvm_build>/lib/cmake/clang
-    -DBUILD_CXX_LANGUAGE_PACKAGE=ON
-    ```
-* Build Sourcetrail as described [above](#building).
-
-## Enable Java Language Support
-
-### Required dependencies
-
-* __JDK 1.8__
-    * __Reason__: Used to build the Java indexer and make it callable from the C++ code via JNI.
-    * __Remarks__: Make sure that `<jdk_root>/bin` is available in your `PATH` environment variable and that the `JAVA_HOME` environment variable is set:
-        ```
-        JAVA_HOME=<path/to/Java>/jdk1.x.x_xxx
-        ```
-
-* __Maven__
-    * __REASON__: Used within Sourcetrail's automated tests.
-    * __Remarks__:  Make sure `.../apache-maven-x.x.x/bin` is available in your `PATH` environment variable and that both `M2_HOME` and `MAVEN_HOME` environment variables are set:
-        ```
-        M2_HOME=.../apache-maven-x.x.x
-        MAVEN_HOME=.../apache-maven-x.x.x
-        ```
-
-### Building
-
-* Run CMake with these additional options:
-    ```
-    -DBUILD_JAVA_LANGUAGE_PACKAGE=ON
-    ```
-* Build Sourcetrail as described [above](#building).
-
-## Enable Python Language Support
-
-### Required Tools
-
-* __7z (required for Windows)__
-    * __REASON__: Used to extract the prebuilt SourcetrailPythonIndexer which is downloaded automatically during build execution.
-
-### Building
-
-* Run CMake with these additional options:
-    ```
-    -DBUILD_PYTHON_LANGUAGE_PACKAGE=ON
-    ```
-* Build Sourcetrail as described [above](#building).
-
-
-## Creating the deployment Package
-
-### Windows
-
-#### Required Tools
-
-* __Visual Studio (required for Windows)__
-    * __Reason__: Used for building the Sourcetrail Windows installer.
-    * __Remarks__: Make sure to install the `.Net desktop development` workload.
-    * __Download__: https://visualstudio.microsoft.com/downloads/
-
-* __Wix 3.11__
-    * __Reason__: Used to build the `sourcetrail.msi` Windows installer.
-    * __Remarks__: Make sure to add `<path/to>/WiX Toolset v3.11/bin` to your `PATH` environment variable.
-    * __Download__: https://wixtoolset.org/releases/
-
-* __Wix extension for Visual Studio__
-    * __Reason__: Used to run Wix from the Visual Studio build environment.
-    * __Download__: https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2017Extension
-
-* __JRE__
-    * __Reason__: Used for indexing the java sample project that ships with the package.
-
-* __WinRAR__
-    * __Reason__: Used for creating the final zip files for the installer and the portable package.
-    * __Remarks__: Make sure to add `<path/to>/WinRAR` to your `PATH` environment variable.
-
-#### Building
-
-* Run `./script/deploy_windows.sh` from your Developer Command Prompt for Visual Studio. The script which will generate a 64bit build and packages it into a portable `.zip` file and a Wix-based Windows installer, each.
-
-### macOS
-
-After building, run the `bundle_install.sh` script within the build directory which will create a `Sourcetrail.app` bundle and generate a `Sourcetrail_<version>.dmg` container.
-
-### Linux
-
-Run `./setup/Linux/createPackages.sh` from the main directory, which creates both a `.tar.gz` and a `.AppImage` package in the main directory. Packaging depends on [linuxdeployqt](https://github.com/probonopd/linuxdeployqt).
-
-
-# How to Run the Tests
-
-The automated test suite of Sourcetrail is powered by [Catch2](https://github.com/catchorg/Catch2). To run the tests, simply execute the `Sourcetrail_test` binary. Before executing, please make sure to set the working directory to `./bin/test`.
-
-
-# License
-
-Sourcetrail is licensed under the [GNU General Public License Version 3](LICENSE.txt).
-
-# Trademark
-
-The "Sourcetrail" name is a trademark owned by Coati Software and is not included within the assets licensed under the GNU GPLv3.
+## Optional command execution
+
+Commands are documentation-only by default. Running one requires:
+
+1. an object command with `"mode": "manual"` in the config;
+2. the host started with `--allow-command`; and
+3. approval of the exact argv, working directory, and graph generation in the UI.
+
+```sh
+./script/code-view.sh /absolute/path/to/repository --allow-command
+```
+
+Code View passes the approved argument array directly to a child process and
+never invokes a shell. Approval is single-use and is invalidated by reindexing
+or a failed index. The process is not sandboxed. See
+[Optional command execution](docs/USAGE.md#optional-command-execution).
+
+## Troubleshooting
+
+- **`brew: command not found`**: install Homebrew, reopen the terminal, and
+  rerun the prerequisite command.
+- **CMake cannot find Qt**: confirm `qthttpserver` is installed and follow the
+  manual build in the usage guide.
+- **Readiness page**: use the URL printed by the host and include its token.
+- **Entry Focus disabled**: add an `entry` or use `Repository`.
+- **Refresh failed**: fix the reported source/config error and press Refresh;
+  the last successful graph remains usable.
+- **Missing relationship**: check filters and whether the target is external or
+  unresolved.
+
+## Documentation
+
+- [Usage guide](docs/USAGE.md): complete first-run and day-to-day instructions.
+- [Technical details](docs/TECHNICAL.md): architecture, contracts, lifecycle,
+  security, API routes, limits, and development.
+- [AI-agent setup prompt](docs/AI_AGENT_SETUP.md): a copy-paste macOS setup
+  prompt.
+- [Documentation verification log](docs/verification-log.md): evidence for the
+  commands, links, screenshots, and walkthroughs.
+
+## Current scope and limits
+
+Python is the first supported analyzer. The graph contract is language-neutral,
+so Java and Go producers can be added later without changing the host or
+canvas. Dynamic Python behavior that cannot be named safely remains an explicit
+external or unresolved boundary. The initial performance target is 10,000
+Python source lines. It is a benchmark target, not a size rejection limit.
+
+## Development checks
+
+```sh
+./script/code-view-gate.sh
+./script/code-view-eval.sh
+```
+
+See the [technical details](docs/TECHNICAL.md#build-and-verification) for
+individual commands.

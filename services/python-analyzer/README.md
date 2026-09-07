@@ -43,21 +43,9 @@ executed. With no configuration, entry discovery checks root `main.py`, a unique
 
 ## Relationships
 
-All public relationships point from consumer to dependency, except containment:
-
-| Contract | Legacy Sourcetrail |
-|---|---|
-| `contains` | `EDGE_MEMBER` |
-| `imports` | `EDGE_IMPORT` |
-| `calls` | `EDGE_CALL` |
-| `constructs` | `EDGE_CALL` |
-| `inherits` | `EDGE_INHERITANCE` |
-| `reads` | `EDGE_USAGE` |
-| `writes` | `EDGE_USAGE` |
-| `api_calls` | `EDGE_USAGE` |
-| `test_covers` | `EDGE_USAGE` |
-| `decorates` | `EDGE_ANNOTATION_USAGE` |
-| `type_uses` | `EDGE_TYPE_USAGE` |
+All public relationships point from consumer to dependency, except containment.
+The supported names are `contains`, `imports`, `calls`, `inherits`, `constructs`,
+`reads`, `writes`, `api_calls`, `test_covers`, `decorates`, and `type_uses`.
 
 `constructs` targets the class. Known `__new__`, `__init__`, inherited members,
 descriptors, and callable instances follow Python's method-resolution order.
