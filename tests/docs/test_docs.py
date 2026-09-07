@@ -49,6 +49,10 @@ class DocumentationContractTests(unittest.TestCase):
         for stale in ("sourcetrail", "coatisoftware", "github.com/coatisoftware", "docs/readme/user_interface.png"):
             self.assertNotIn(stale, lowered)
         self.assertIn("./script/code-view.sh \"$PWD/tests/fixtures/tic-tac-toe\"", text)
+        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash", text)
+        self.assertIn("\ncode-view\n", text)
+        self.assertTrue((ROOT / "install.sh").is_file())
+        self.assertTrue((ROOT / "script/code-view-command.sh").is_file())
         self.assertIn("docs/USAGE.md", text)
         self.assertIn("docs/TECHNICAL.md", text)
         self.assertIn("docs/AI_AGENT_SETUP.md", text)
@@ -64,7 +68,9 @@ class DocumentationContractTests(unittest.TestCase):
     def test_prompt_contains_verified_setup_and_safety_steps(self) -> None:
         text = (ROOT / "docs/AI_AGENT_SETUP.md").read_text(encoding="utf-8")
         self.assertIn("brew install cmake ninja qthttpserver node python", text)
-        self.assertIn("./script/code-view.sh \"<PYTHON_REPOSITORY>\"", text)
+        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash", text)
+        self.assertIn('cd "<PYTHON_REPOSITORY>"', text)
+        self.assertIn("\n   code-view\n", text)
         self.assertIn("Do not add --allow-command", text)
         self.assertIn("Do not run the target repository", text)
         self.assertIn("<PYTHON_REPOSITORY>", text)

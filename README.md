@@ -11,6 +11,32 @@ importing or executing the repository.
 [Quick start](#quick-start) · [Usage guide](docs/USAGE.md) ·
 [Technical details](docs/TECHNICAL.md) · [AI-agent setup](docs/AI_AGENT_SETUP.md)
 
+## One-command installation
+
+On a Mac with an internet connection, install Code View with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash
+```
+
+The installer checks for Homebrew, CMake, Ninja, Qt HttpServer, Node.js, npm,
+Python, and Git. It installs anything missing, keeps the app under
+`~/.local/share/code-view`, and adds the `code-view` command to Homebrew's bin
+directory. If that directory is not on `PATH`, the installer prints the one
+line to add.
+
+After installation, move into any Python repository and run:
+
+```sh
+cd /absolute/path/to/your/python-repository
+code-view
+```
+
+Code View scans the current directory, starts the local host, and opens the
+tokenized localhost URL in your default browser. Press `Ctrl-C` in that same
+terminal to stop it. For a reviewable manual install, see
+[Install Code View](docs/USAGE.md#2-install-code-view).
+
 ![Code View showing callers on the left, a selected Python symbol in the middle, and dependencies on the right](docs/images/01-entry-focus-light.png)
 
 *Selected flow keeps the symbol you are studying in the middle and makes each

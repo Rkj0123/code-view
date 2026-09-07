@@ -46,6 +46,12 @@ the host envelope into browser types.
 
 ## 4. Startup and request flow
 
+The curl installer (`install.sh`) places a shallow checkout under
+`~/.local/share/code-view` and writes a small `code-view` launcher into the
+Homebrew bin directory. The launcher supplies its caller's `$PWD` as the
+repository argument, waits for the host's JSON startup record, and opens the
+returned URL with macOS `open`.
+
 1. `script/code-view.sh` installs locked npm dependencies when needed.
 2. The script builds the canvas and the native host.
 3. `code-view-local-server` validates the repository and configuration.

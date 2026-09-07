@@ -25,6 +25,22 @@ You need:
 
 ## 2. Install Code View
 
+The shortest installation path is one terminal command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash
+```
+
+The installer checks Homebrew, CMake, Ninja, Qt HttpServer, Node.js/npm,
+Python, and Git, installing missing tools through Homebrew. It stores the
+Code View checkout in `~/.local/share/code-view` and installs a `code-view`
+command in Homebrew's bin directory. If that directory is not already on your
+`PATH`, it prints the required PATH line.
+
+The installer supports optional maintainer overrides through
+`CODE_VIEW_REPO_URL`, `CODE_VIEW_REF`, `CODE_VIEW_INSTALL_ROOT`, and
+`CODE_VIEW_BIN_DIR`. Normal users do not need them.
+
 Open Terminal and move to the checkout:
 
 ```sh
@@ -67,6 +83,18 @@ git lfs pull
 ```
 
 ## 3. Start and stop Code View
+
+After the one-command installer finishes, the normal workflow is:
+
+```sh
+cd /absolute/path/to/your/python-repository
+code-view
+```
+
+`code-view` passes the current directory to the existing launcher, opens the
+printed localhost URL in the default macOS browser, and keeps the host in this
+terminal. Press `Ctrl-C` here to stop it. Pass host options only when needed,
+for example `code-view --no-watch` or `code-view --editor code`.
 
 Start the bundled smoke-test repository:
 

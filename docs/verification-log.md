@@ -13,7 +13,9 @@ commands were run from the repository root unless a working directory is shown.
       this repository.
 - [x] Confirm configuration and launch examples match their versioned schemas.
 - [x] Run `python3 -m unittest discover -s tests/docs -p 'test_*.py'` (8 tests, OK).
+- [x] Run `python3 -m unittest discover -s tests/installer -p 'test_*.py'` (5 tests, OK).
 - [x] Run `sh -n` on the three Code View shell scripts (OK).
+- [x] Run `sh -n install.sh script/code-view-command.sh` (OK).
 
 The Homebrew installer URL in the docs was checked against Homebrew's current
 official page. It was not executed during verification because Homebrew was
@@ -24,6 +26,11 @@ already installed on this Mac; the package command was run and completed.
 - [x] Build the web canvas and native host from a clean isolated worktree.
 - [x] Start the bundled tic-tac-toe fixture with the documented launcher.
 - [x] Copy the printed tokenized URL into a local browser.
+- [x] Run `code-view` from the fixture directory; it passed the current
+      directory through to the host and invoked the browser opener with the
+      printed tokenized URL.
+- [x] Run the installer smoke path with dependency installation skipped and a
+      temporary command directory; the installed command returned its help text.
 - [x] Open Repository and Entry Focus; select a symbol and inspect evidence.
 - [x] Export JSON and PNG, switch light/dark mode, and stop with `Ctrl-C`.
 - [x] Capture the six screenshots in `docs/images/` from the real app.
@@ -51,6 +58,7 @@ Measured results:
 | Check | Result |
 | --- | --- |
 | Documentation contract | 8 tests passed. |
+| Installer contract | 5 tests passed; shell syntax, install command creation, current-directory forwarding, URL opening, safe refusal to overwrite an unrelated command, and host-failure propagation covered. |
 | Python fixture | 62 nodes, 142 edges, 0 diagnostics; exact golden graph passed. |
 | 10,000-line performance | Standard cold p95 597 ms; import-heavy cold p95 470 ms; adjacency p95 0.003834 ms. |
 | Web periodic suite | 15 contract checks and 6 browser workflows passed. |
