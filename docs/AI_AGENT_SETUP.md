@@ -1,9 +1,9 @@
 # AI-agent setup prompt
 
-Copy the prompt below into an AI coding agent after checking out Code View. It
-is written to set up the existing application, not to ask the agent to invent a
-replacement. Replace `<PYTHON_REPOSITORY>` with the absolute path to the Python
-repository you want to inspect.
+Copy the prompt below into an AI coding agent. It installs the existing
+application when needed, not an invented replacement. Replace
+`<PYTHON_REPOSITORY>` with the absolute path to the Python repository you want
+to inspect.
 
 The prompt keeps the normal path local and read-only. It does not enable command
 execution, deploy anything, add a backend, or modify the target repository.
@@ -13,28 +13,32 @@ execution, deploy anything, add a backend, or modify the target repository.
 ```text
 Set up and run Code View for this Python repository on this macOS machine.
 
-Code View is the checked-out local application. Work from its existing checkout
-and do not replace it with a new implementation.
+Code View is the local application. Do not replace it with a new implementation.
 
 Target repository: <PYTHON_REPOSITORY>
 
 Follow these steps:
 
-1. Confirm that the current directory is the Code View checkout by checking for:
+1. Check whether the current directory is the Code View checkout by looking for:
    script/code-view.sh
    services/python-analyzer/analyzer.py
    services/local-server
    services/web-canvas
 
-   If those paths are not present, locate the local Code View checkout. If it
-   is not available, stop and tell me that I must provide it. Do not invent a
-   replacement implementation.
+   If those paths are not present, check whether `code-view` is already
+   installed. If it is not, ask permission if your environment requires it and
+   run this one-command installer:
+   curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash
+   The installer checks dependencies, installs missing tools through Homebrew,
+   and installs the command. Do not invent a replacement implementation.
 
 2. Check that the target repository path is an existing absolute directory.
    Ask me for the path if I did not provide one. Do not silently analyze the
    Code View checkout itself.
 
-3. Read README.md, docs/USAGE.md, and docs/TECHNICAL.md before changing anything.
+3. If a checkout is available, read README.md, docs/USAGE.md, and
+   docs/TECHNICAL.md before changing anything. Do not modify those docs during
+   a normal setup.
 
 4. Check these commands and versions:
    brew
@@ -45,7 +49,7 @@ Follow these steps:
    npm
 
    The required environment is macOS, CMake 3.21 or newer, Ninja, Qt 6.8 or
-   newer with Core, Network, and HttpServer, Python 3, and Node.js/npm. If a
+   newer with Core, Network, and HttpServer, Python 3.10+, and Node.js/npm. If a
    prerequisite is missing and package installation is allowed, install it with:
    brew install cmake ninja qthttpserver node python
    If Homebrew itself is missing, tell me to run this official installer and
@@ -60,7 +64,12 @@ Follow these steps:
    View can detect root main.py, one unique __main__.py, or one unique top-level
    if __name__ == "__main__" guard. Tell me which entry will be used.
 
-7. Start the app from the Code View checkout:
+7. Start Code View from the target repository directory:
+   cd "<PYTHON_REPOSITORY>"
+   code-view
+
+   If the `code-view` command was not installed and you are working from a
+   checkout, use the equivalent:
    ./script/code-view.sh "<PYTHON_REPOSITORY>"
 
    Do not add --allow-command. Do not run the target repository. Do not add an

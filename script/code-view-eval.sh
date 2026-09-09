@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 python3 "$root/evals/python-analyzer/evaluate.py"
 python3 "$root/evals/performance/evaluate.py"
 python3 "$root/evals/docs/evaluate.py"
+python3 "$root/evals/installer/evaluate.py"
 npm run eval --prefix "$root/services/web-canvas"
 
 host_eval="$root/services/local-server/build/code-view-local-server-eval"
