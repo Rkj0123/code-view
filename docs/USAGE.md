@@ -21,18 +21,18 @@ You need:
 - Ninja;
 - Qt 6.8 or newer with Core, Network, and HttpServer;
 - Node.js and npm; and
-- Python 3.
+- Python 3.10+.
 
 ## 2. Install Code View
 
 The shortest installation path is one terminal command:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash
 ```
 
 The installer checks Homebrew, CMake, Ninja, Qt HttpServer, Node.js/npm,
-Python, and Git, installing missing tools through Homebrew. It stores the
+Python 3.10+, and Git, installing missing tools through Homebrew. It stores the
 Code View checkout in `~/.local/share/code-view` and installs a `code-view`
 command in Homebrew's bin directory. If that directory is not already on your
 `PATH`, it prints the required PATH line.

@@ -65,3 +65,15 @@ Measured results:
 | Browser exports | Selected-flow JSON contained 12 nodes and 11 edges; PNG export was 96,084 bytes and had a valid PNG header. |
 | Native suite | 1 CTest target passed; 148 native checks passed. |
 | Reliability suite | 20 checks passed with zero source/static leaks. |
+
+## Open-source installer verification, 2026-09-08
+
+- Pass 1: installer regression tests and documentation link/fragment checks.
+- Pass 2: real browser and C++ builds; 41 analyzer tests, 59 browser unit tests,
+  69 host gate checks, six browser workflows, and 20 host reliability checks passed.
+- Pass 3: installed into a temporary bin directory, ran code-view from a Python
+  directory containing a space, verified the browser-open request, HTTP 200,
+  correct graph project and symbol, unchanged source, and clean shutdown.
+- New Homebrew provisioning and alternate CPU hardware were simulated, not run
+  on a clean machine. This release supports macOS/Python only.
+- Publication and anonymous URL checks are recorded separately after release.

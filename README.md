@@ -16,11 +16,12 @@ importing or executing the repository.
 On a Mac with an internet connection, install Code View with one command:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash
 ```
 
 The installer checks for Homebrew, CMake, Ninja, Qt HttpServer, Node.js, npm,
-Python, and Git. It installs anything missing, keeps the app under
+Python 3.10+, and Git. It installs missing tools and builds the app before reporting
+success. It keeps the app under
 `~/.local/share/code-view`, and adds the `code-view` command to Homebrew's bin
 directory. If that directory is not on `PATH`, the installer prints the one
 line to add.
@@ -58,7 +59,7 @@ connection easy to follow.*
 
 The current release supports macOS and Python repositories. Install Homebrew,
 then install CMake 3.21+, Ninja, Qt 6.8+ with Core/Network/HttpServer, Node.js,
-npm, and Python 3:
+npm, and Python 3.10+:
 
 If `brew --version` fails, install Homebrew with its official installer, follow
 the PATH instruction it prints, and open a new Terminal window:
@@ -226,7 +227,7 @@ Commands are documentation-only by default. Running one requires:
 Code View passes the approved argument array directly to a child process and
 never invokes a shell. Approval is single-use and is invalidated by reindexing
 or a failed index. The process is not sandboxed. See
-[Optional command execution](docs/USAGE.md#optional-command-execution).
+[Optional command execution](docs/USAGE.md#16-optional-command-execution).
 
 ## Troubleshooting
 
@@ -266,5 +267,16 @@ Python source lines. It is a benchmark target, not a size rejection limit.
 ./script/code-view-eval.sh
 ```
 
-See the [technical details](docs/TECHNICAL.md#build-and-verification) for
+See the [technical details](docs/TECHNICAL.md#17-build-and-verification) for
 individual commands.
+
+## License and community
+
+Code View is free and open source under [GNU GPL version 3](LICENSE.txt).
+You may use, study, modify, and redistribute it, including commercially, under
+that license. Distributed derivative works must preserve its license obligations.
+
+This project builds on Sourcetrail by Coati Software and its contributors.
+Inherited copyright notices and third-party licenses remain in force. The
+Sourcetrail trademark is not included in the software license. See
+[licensing scope](NOTICE.md) and [contributing](CONTRIBUTING.md).

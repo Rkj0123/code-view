@@ -13,6 +13,8 @@ README = ROOT / "README.md"
 PUBLIC_DOCS = [
     README,
     ROOT / "CODE_VIEW.md",
+    ROOT / "NOTICE.md",
+    ROOT / "CONTRIBUTING.md",
     ROOT / "docs/USAGE.md",
     ROOT / "docs/TECHNICAL.md",
     ROOT / "docs/AI_AGENT_SETUP.md",
@@ -42,14 +44,19 @@ class DocumentationContractTests(unittest.TestCase):
                     continue
                 relative = target.split("#", 1)[0]
                 self.assertTrue((document.parent / relative).is_file(), f"{document}: {target}")
+                if "#" in target:
+                    headings = re.findall(r"^#{1,6} (.+)$", (document.parent / relative).read_text(), re.M)
+                    anchors = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
+                    self.assertIn(target.split("#", 1)[1], anchors, f"{document}: {target}")
 
     def test_readme_is_standalone(self) -> None:
         text = README.read_text(encoding="utf-8")
-        lowered = text.lower()
+        # Historical attribution belongs in licensing, not the product walkthrough.
+        lowered = text.split("## License and community")[0].lower()
         for stale in ("sourcetrail", "coatisoftware", "github.com/coatisoftware", "docs/readme/user_interface.png"):
             self.assertNotIn(stale, lowered)
         self.assertIn("./script/code-view.sh \"$PWD/tests/fixtures/tic-tac-toe\"", text)
-        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash", text)
+        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash", text)
         self.assertIn("\ncode-view\n", text)
         self.assertTrue((ROOT / "install.sh").is_file())
         self.assertTrue((ROOT / "script/code-view-command.sh").is_file())
@@ -68,12 +75,13 @@ class DocumentationContractTests(unittest.TestCase):
     def test_prompt_contains_verified_setup_and_safety_steps(self) -> None:
         text = (ROOT / "docs/AI_AGENT_SETUP.md").read_text(encoding="utf-8")
         self.assertIn("brew install cmake ninja qthttpserver node python", text)
-        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash", text)
+        self.assertIn("curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash", text)
         self.assertIn('cd "<PYTHON_REPOSITORY>"', text)
         self.assertIn("\n   code-view\n", text)
         self.assertIn("Do not add --allow-command", text)
         self.assertIn("Do not run the target repository", text)
         self.assertIn("<PYTHON_REPOSITORY>", text)
+        self.assertNotIn("3.10+.10+", text)
 
     def test_config_and_approval_examples_have_expected_contract_versions(self) -> None:
         config = json.loads((ROOT / "contracts/code-view-config-v1.example.json").read_text(encoding="utf-8"))

@@ -28,7 +28,7 @@ Follow these steps:
    If those paths are not present, check whether `code-view` is already
    installed. If it is not, ask permission if your environment requires it and
    run this one-command installer:
-   curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/codex/code-view-revamp/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/Rkj0123/code-view/main/install.sh | bash
    The installer checks dependencies, installs missing tools through Homebrew,
    and installs the command. Do not invent a replacement implementation.
 
@@ -49,7 +49,7 @@ Follow these steps:
    npm
 
    The required environment is macOS, CMake 3.21 or newer, Ninja, Qt 6.8 or
-   newer with Core, Network, and HttpServer, Python 3, and Node.js/npm. If a
+   newer with Core, Network, and HttpServer, Python 3.10+, and Node.js/npm. If a
    prerequisite is missing and package installation is allowed, install it with:
    brew install cmake ninja qthttpserver node python
    If Homebrew itself is missing, tell me to run this official installer and
