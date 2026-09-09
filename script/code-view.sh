@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH= cd -P -- "$(dirname -- "$0")/.." && pwd -P)
 build_only=0
 if [ "${1:-}" = "--build-only" ]; then
     build_only=1
