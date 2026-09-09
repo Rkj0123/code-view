@@ -260,6 +260,35 @@ esac""")
                 self.assertEqual(args[args.index("--analyzer-arg") + 1], "/custom/analyzer" if custom else "/chosen/python3")
                 self.assertEqual(args.count("--analyzer-arg"), 1 if custom else 2)
 
+    def test_build_uses_physical_paths_from_a_symlinked_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "real"
+            script = root / "script"
+            script.mkdir(parents=True)
+            shutil.copy2(ROOT / "script/code-view.sh", script / "code-view.sh")
+            alias = Path(directory) / "alias"
+            alias.symlink_to(root, target_is_directory=True)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            log = root / "npm.log"
+            npm = fake_bin / "npm"
+            npm.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$LOG"\n')
+            npm.chmod(0o755)
+            cmake = fake_bin / "cmake"
+            cmake.write_text("#!/bin/sh\nexit 0\n")
+            cmake.chmod(0o755)
+
+            result = subprocess.run(
+                [str(alias / "script/code-view.sh"), "--build-only"],
+                env=os.environ | {"LOG": str(log), "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            web = root.resolve() / "services/web-canvas"
+            self.assertEqual(log.read_text().splitlines(), [f"ci --prefix {web}", f"run build --prefix {web}"])
+
     def test_command_returns_a_failed_host_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
