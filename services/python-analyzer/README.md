@@ -47,6 +47,14 @@ All public relationships point from consumer to dependency, except containment.
 The supported names are `contains`, `imports`, `calls`, `inherits`, `constructs`,
 `reads`, `writes`, `api_calls`, `test_covers`, `decorates`, and `type_uses`.
 
+`from` imports can target definite module variables and direct or aliased
+re-exports. Package attributes take precedence over same-named child modules;
+source order tracks loaded child modules and later attribute assignments.
+Eager assignment expressions can create importable variables; short-circuit
+and lazy expressions do not create definite bindings unless evaluated.
+Circular imports use bindings available at the import's source position,
+while uncertain or unavailable bindings remain unresolved.
+
 `constructs` targets the class. Known `__new__`, `__init__`, inherited members,
 descriptors, and callable instances follow Python's method-resolution order.
 Known lazy values apply effects only when a visible consumer advances them.

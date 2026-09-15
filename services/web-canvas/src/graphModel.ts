@@ -76,10 +76,10 @@ const ancestorsOf = (nodeId: string, byId: Map<string, GraphNode>) => {
   return ancestors;
 };
 
-const collapsedRepresentative = (node: GraphNode, collapsed: Set<string>, byId: Map<string, GraphNode>) => {
+const collapsedRepresentative = (node: GraphNode, collapsed: Set<string>, eligible: Set<string>, byId: Map<string, GraphNode>) => {
   let parent = node.parent;
   while (parent) {
-    if (collapsed.has(parent)) return parent;
+    if (collapsed.has(parent) && eligible.has(parent)) return parent;
     parent = byId.get(parent)?.parent;
   }
   return node.id;
@@ -111,18 +111,26 @@ export const selectedEdge = (document: GraphDocument, displayEdges: GraphEdge[],
 
 export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters, mode: ViewMode, collapsed: Set<string>): VisibleGraph {
   const byId = new Map(document.nodes.map((node) => [node.id, node]));
-  const allowedEdges = document.edges.filter((edge) => filters.relations[edge.kind]);
+  const allowedEdges = document.edges.filter((edge) => filters.relations[edge.kind] && (!filters.changedOnly || edge.diff !== "unchanged"));
   const entryIds = mode === "entry" && document.entryKey ? entryReachable(document, document.edges) : null;
+  const isScoped = (node: GraphNode) => (!node.test || filters.includeTests) && (!entryIds || entryIds.has(node.id));
+  const isEligible = (node: GraphNode) => isScoped(node) && (!filters.changedOnly || node.diff !== "unchanged");
+  const isHiddenCompound = (node: GraphNode) => (node.kind === "module" || node.kind === "package") && !filters.nodes[node.kind];
   const candidateIds = new Set<string>();
 
-  document.nodes.forEach((node) => {
-    if ((!node.test || filters.includeTests) && filters.nodes[node.kind] && (!filters.changedOnly || node.diff !== "unchanged") && (!entryIds || entryIds.has(node.id))) {
-      candidateIds.add(node.id);
-      ancestorsOf(node.id, byId).forEach((id) => {
-        const ancestor = byId.get(id);
-        if (ancestor && filters.nodes[ancestor.kind] && (!ancestor.test || filters.includeTests)) candidateIds.add(id);
-      });
-    }
+  const addCandidate = (node: GraphNode) => {
+    if (filters.nodes[node.kind]) candidateIds.add(node.id);
+    ancestorsOf(node.id, byId).forEach((id) => {
+      const ancestor = byId.get(id);
+      if (ancestor && filters.nodes[ancestor.kind] && (!ancestor.test || filters.includeTests)) candidateIds.add(id);
+    });
+  };
+  document.nodes.forEach((node) => { if (isEligible(node)) addCandidate(node); });
+  if (filters.changedOnly) allowedEdges.forEach((edge) => {
+    [edge.source, edge.target].forEach((id) => {
+      const node = byId.get(id);
+      if (node && isScoped(node) && (filters.nodes[node.kind] || isHiddenCompound(node))) addCandidate(node);
+    });
   });
 
   const externalGroups = new Map<string, GraphNode>();
@@ -156,7 +164,7 @@ export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters
   const representative = new Map<string, string>();
   candidateIds.forEach((id) => {
     const node = byId.get(id);
-    if (node) representative.set(id, externalRepresentative.get(id) ?? collapsedRepresentative(node, collapsed, byId));
+    if (node) representative.set(id, externalRepresentative.get(id) ?? collapsedRepresentative(node, collapsed, candidateIds, byId));
   });
 
   const visibleIds = new Set(representative.values());
@@ -168,19 +176,37 @@ export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters
     });
   externalGroups.forEach((node) => { if (visibleIds.has(node.id)) nodes.push(node); });
 
+  const projectRepresentative = (id: string) => {
+    const direct = representative.get(id);
+    if (direct) return direct;
+    const node = byId.get(id);
+    if (!node || !isHiddenCompound(node) || !isScoped(node)) return undefined;
+    return ancestorsOf(id, byId).map((ancestor) => representative.get(ancestor))
+      .find((value): value is string => Boolean(value));
+  };
   const aggregated = new Map<string, GraphEdge>();
   allowedEdges.forEach((edge) => {
-    const source = representative.get(edge.source);
-    const target = representative.get(edge.target);
+    const source = projectRepresentative(edge.source);
+    const target = projectRepresentative(edge.target);
     if (!source || !target || source === target) return;
+    // Hidden compound links are already represented by the visible parent tree.
+    if (edge.kind === "contains" && (!representative.has(edge.source) || !representative.has(edge.target))) return;
     const id = `${edge.kind}|${source}|${target}`;
     const current = aggregated.get(id);
+    const resolution = current?.resolution === edge.resolution ? edge.resolution
+      : current?.resolution === "unresolved" || edge.resolution === "unresolved" ? "unresolved" : "external";
     aggregated.set(id, current ? {
       ...current,
       id,
       count: current.count + edge.count,
       locations: [...(current.locations ?? []), ...(edge.locations ?? [])],
-    } : { ...edge, source, target });
+      diff: current.diff === edge.diff ? current.diff : "modified",
+      resolution,
+      confidence: current.confidence === edge.confidence ? current.confidence
+        : current.confidence === "unresolved" || edge.confidence === "unresolved" ? "unresolved" : "heuristic",
+      boundaryReason: current.resolution === edge.resolution && current.boundaryReason === edge.boundaryReason
+        ? current.boundaryReason : `Mixed boundary evidence (${resolution}).`,
+    } : { ...edge, id, source, target });
   });
 
   return { nodes, edges: [...aggregated.values()] };

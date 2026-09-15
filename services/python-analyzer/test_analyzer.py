@@ -147,6 +147,332 @@ class AnalyzerBehaviorTest(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stderr)
 
+    def test_exact_internal_import_targets_definite_module_variable(self):
+        temporary, _, graph = analyze_files({
+            "main.py": (
+                "from api import app as alias, conditional\n"
+                "from api import exported, public_alias, conditional_export\n"
+                "import api.app\nimport api.missing\nimport api.exported\n"
+            ),
+            "api/__init__.py": (
+                "from .config import exported, aliased as public_alias, conditional_export\n"
+                "def create_app():\n    return object()\n"
+                "app = create_app()\n"
+                "if condition:\n    conditional = create_app()\n"
+            ),
+            "api/app.py": "pass\n",
+            "api/config.py": (
+                "exported = object()\naliased = object()\n"
+                "if condition:\n    conditional_export = object()\n"
+            ),
+        })
+        with temporary:
+            variables = [node for node in graph["nodes"] if node["qualifiedName"] == "api.$local.app"]
+            imports = relationship_set(graph, "imports")
+            self.assertEqual(1, len(variables))
+            self.assertIn("main -> api.$local.app", imports)
+            self.assertIn("main -> api.config.$local.exported", imports)
+            self.assertIn("main -> api.config.$local.aliased", imports)
+            self.assertIn("main -> api.app", imports)
+            self.assertIn("main -> main::<unresolved>@1:31:api.conditional", imports)
+            self.assertIn("main -> main::<unresolved>@2:41:api.conditional_export", imports)
+            self.assertIn("main -> main::<unresolved>@4:8:api.missing", imports)
+            self.assertIn("main -> main::<unresolved>@5:8:api.exported", imports)
+
+    def test_augmented_and_named_expression_module_bindings(self):
+        for source, expected in (
+            ("app = 1\napp += 1\n", "variable"),
+            ("(app := 1)\n", "variable"),
+            ("value = (app := 1)\n", "variable"),
+            ("print(app := 1)\n", "variable"),
+            ("assert (app := 1)\n", "variable"),
+            ("def function(value=(app := 1)):\n    pass\n", "variable"),
+            ("function = lambda value=(app := 1): value\n", "variable"),
+            ("@(app := lambda function: function)\ndef function():\n    pass\n", "variable"),
+            ("True and (app := 1)\n", "variable"),
+            ("False or (app := 1)\n", "variable"),
+            ("0 < 1 < (app := 2)\n", "variable"),
+            ("1 < 0 < (app := 2)\n", "unresolved"),
+            ("condition < 0 < (app := 2)\n", "unresolved"),
+            ("value = (app := 1) if True else 0\n", "variable"),
+            ("False and (app := 1)\n", "unresolved"),
+            ("True or (app := 1)\n", "unresolved"),
+            ("condition and (app := 1)\n", "unresolved"),
+            ("value = (app := 1) if condition else 0\n", "unresolved"),
+            ("function = lambda: (app := 1)\n", "unresolved"),
+            ("values = ((app := 1) for item in [1])\n", "unresolved"),
+            ("assert True, (app := 1)\n", "unresolved"),
+            ("app += 1\n", "unresolved"),
+            ("if condition:\n    (app := 1)\n", "unresolved"),
+        ):
+            with self.subTest(source=source):
+                temporary, _, graph = analyze_files({"main.py": "from api import app\n", "api/__init__.py": source})
+                with temporary:
+                    nodes = {node["id"]: node for node in graph["nodes"]}
+                    targets = [nodes[edge["target"]] for edge in graph["edges"]
+                               if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"]
+                    self.assertEqual([expected], [node["kind"] for node in targets])
+                    if expected == "variable":
+                        self.assertEqual(["api.$local.app"], [node["qualifiedName"] for node in targets])
+                        self.assertEqual(1, sum(node["qualifiedName"] == "api.$local.app" for node in nodes.values()))
+
+    def test_wildcard_imports_preserve_source_order_uncertainty(self):
+        for before in ("", "name = 1\n"):
+            for after in ("", "name = 2\n"):
+                with self.subTest(before=before, after=after):
+                    temporary, _, graph = analyze_files({
+                        "main.py": "from pkg import name\n",
+                        "pkg/__init__.py": before + "if condition:\n    from .other import *\n" + after,
+                        "pkg/other.py": "name = 42\n",
+                        "pkg/name.py": "pass\n",
+                    })
+                    with temporary:
+                        nodes = {node["id"]: node for node in graph["nodes"]}
+                        self.assertEqual(["variable" if after else "unresolved"], [nodes[edge["target"]]["kind"] for edge in graph["edges"]
+                            if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"])
+
+    def test_package_attributes_and_import_aliases_beat_child_modules(self):
+        temporary, _, graph = analyze_files({
+            "main.py": "from api import value, Value, run, public\nvalue()\nValue()\nrun()\n",
+            "api/__init__.py": (
+                "def value():\n    pass\n"
+                "class Value:\n    pass\n"
+                "from .config import run\n"
+                "import dep as public\n"
+            ),
+            "api/config.py": "def run():\n    pass\n",
+            "api/value.py": "def wrong():\n    pass\n",
+            "api/Value.py": "class Wrong:\n    pass\n",
+            "api/run.py": "def wrong():\n    pass\n",
+            "dep.py": "pass\n",
+        })
+        with temporary:
+            imports = relationship_set(graph, "imports")
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            call_targets = {
+                (nodes[edge["source"]]["qualifiedName"], nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+                for edge in graph["edges"] if edge["kind"] == "calls"
+            }
+            construct_targets = {
+                (nodes[edge["source"]]["qualifiedName"], nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+                for edge in graph["edges"] if edge["kind"] == "constructs"
+            }
+            self.assertIn("main -> api.value", imports)
+            self.assertIn("main -> api.Value", imports)
+            self.assertIn("main -> api.config.run", imports)
+            self.assertIn("main -> dep", imports)
+            self.assertIn(("main", "api.value", "function"), call_targets)
+            self.assertIn(("main", "api.config.run", "function"), call_targets)
+            self.assertIn(("main", "api.Value", "class"), construct_targets)
+            self.assertNotIn(("main", "api.value", "module"), call_targets)
+
+    def test_conditional_and_source_order_module_bindings_stay_honest(self):
+        temporary, _, graph = analyze_files({
+            "main.py": "from api import value, conditional, final, unreachable\n",
+            "api/__init__.py": (
+                "if condition:\n    def value():\n        pass\n"
+                "if condition:\n    from .config import conditional\n"
+                "from .config import final\n"
+                "final = object()\n"
+                "if False:\n    from .config import unreachable\n"
+            ),
+            "api/config.py": (
+                "conditional = object()\nfinal = object()\nunreachable = object()\n"
+            ),
+            "api/value.py": "pass\n",
+            "api/conditional.py": "pass\n",
+        })
+        with temporary:
+            imports = relationship_set(graph, "imports")
+            self.assertIn("main -> api.$local.final", imports)
+            self.assertNotIn("main -> api.config.$local.final", imports)
+            self.assertTrue(any(
+                relation.startswith("main -> main::<unresolved>") and relation.endswith(":api.value")
+                for relation in imports
+            ))
+            self.assertTrue(any(
+                relation.startswith("main -> main::<unresolved>") and relation.endswith(":api.conditional")
+                for relation in imports
+            ))
+            self.assertTrue(any(
+                relation.startswith("main -> main::<unresolved>") and relation.endswith(":api.unreachable")
+                for relation in imports
+            ))
+
+    def test_circular_reexports_and_namespace_roots_preserve_boundaries(self):
+        temporary, _, graph = analyze_files({
+            "main.py": (
+                "from b import public\nimport ns\nimport ns.mod\nimport ns.pkg.mod\nfrom ns import missing\n"
+            ),
+            "a.py": "value = object()\nfrom b import public\n",
+            "b.py": "from a import value as public\n",
+            "ns/mod.py": "pass\n",
+            "ns/pkg/mod.py": "pass\n",
+        })
+        with temporary:
+            imports = relationship_set(graph, "imports")
+            self.assertIn("main -> ns", imports)
+            self.assertIn("main -> ns.mod", imports)
+            self.assertIn("main -> ns.pkg.mod", imports)
+            self.assertNotIn("main -> a.$local.value", imports)
+            self.assertIn("b -> a.$local.value", imports)
+            self.assertTrue(any(
+                relation.startswith("main -> main::<unresolved>") and relation.endswith(":b.public")
+                for relation in imports
+            ))
+            self.assertTrue(any(
+                relation.startswith("main -> main::<unresolved>") and relation.endswith(":ns.missing")
+                for relation in imports
+            ))
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            main_import_targets = [
+                (nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+                for edge in graph["edges"]
+                if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+            ]
+            self.assertNotIn(("ns", "unresolved"), main_import_targets)
+            ns_nodes = {
+                (node["qualifiedName"], node["kind"])
+                for node in graph["nodes"] if node["qualifiedName"].startswith("ns")
+            }
+            self.assertIn(("ns", "package"), ns_nodes)
+            self.assertIn(("ns.mod", "module"), ns_nodes)
+            self.assertIn(("ns.pkg", "package"), ns_nodes)
+            self.assertIn(("ns.pkg.mod", "module"), ns_nodes)
+
+    def test_relative_child_imports_and_aliases_resolve_to_modules(self):
+        temporary, _, graph = analyze_files({
+            "main.py": "from api import dep, public\nfrom ns import child\n",
+            "api/__init__.py": "from . import dep\nfrom . import dep as public\n",
+            "api/dep.py": "value = 1\n",
+            "ns/child/module.py": "pass\n",
+        })
+        with temporary:
+            imports = relationship_set(graph, "imports")
+            self.assertIn("api -> api.dep", imports)
+            self.assertIn("main -> api.dep", imports)
+            self.assertIn("main -> ns.child", imports)
+            self.assertFalse(any(node["unresolved"] for node in graph["nodes"]))
+
+    def test_dotted_imports_preserve_module_attributes_in_later_expressions(self):
+        for prefix in ("pkg", "pkg.sub"):
+            with self.subTest(prefix=prefix):
+                package = prefix.replace(".", "/")
+                files = {
+                    "main.py": f"import {prefix}.name\n{prefix}.name()\nfrom {prefix} import name\nname()\n",
+                    "pkg/__init__.py": "",
+                    f"{package}/__init__.py": "def name():\n    pass\n",
+                    f"{package}/name.py": "pass\n",
+                }
+                temporary, _, graph = analyze_files(files)
+                with temporary:
+                    nodes = {node["id"]: node for node in graph["nodes"]}
+                    targets = [nodes[edge["target"]] for edge in graph["edges"]
+                               if nodes[edge["source"]]["qualifiedName"] == "main"
+                               and edge["kind"] in {"imports", "calls"}]
+                    self.assertTrue(targets)
+                    self.assertTrue(all(node["kind"] == "module" for node in targets), targets)
+
+    def test_transitive_imports_preserve_cached_package_attributes(self):
+        for source in ("import helper", "from helper import exported"):
+            for package, expected in (("def name(): pass\n", "module"),
+                                      ("import pkg.name\nname = object()\n", "variable")):
+                with self.subTest(source=source, package=package):
+                    temporary, _, graph = analyze_files({
+                        "main.py": source + "\nfrom pkg import name\n",
+                        "helper.py": "import pkg.name\nexported = object()\n",
+                        "pkg/__init__.py": package,
+                        "pkg/name.py": "pass\n",
+                    })
+                    with temporary:
+                        nodes = {node["id"]: node for node in graph["nodes"]}
+                        targets = [nodes[edge["target"]] for edge in graph["edges"]
+                                   if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+                                   and edge["range"]["start"]["line"] == 2]
+                        self.assertEqual([expected], [node["kind"] for node in targets])
+
+    def test_conditional_transitive_imports_do_not_invent_package_attributes(self):
+        for helper, expected in (
+            ("if condition:\n    import pkg.name\n", "unresolved"),
+            ("if False:\n    import pkg.name\n", "function"),
+            ("if condition:\n    import pkg.name\nimport pkg.name\n", "module"),
+        ):
+            with self.subTest(helper=helper):
+                temporary, _, graph = analyze_files({
+                    "main.py": "import helper\nfrom pkg import name\n",
+                    "helper.py": helper,
+                    "pkg/__init__.py": "def name(): pass\n",
+                    "pkg/name.py": "pass\n",
+                })
+                with temporary:
+                    nodes = {node["id"]: node for node in graph["nodes"]}
+                    self.assertEqual([expected], [nodes[edge["target"]]["kind"] for edge in graph["edges"]
+                        if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+                        and edge["range"]["start"]["line"] == 2])
+
+    def test_definite_exports_replace_conditional_child_import_effects(self):
+        for package, child_import, replacement, target, kind in (
+            ("pkg", "import pkg.name", "name = 1\n", "pkg.$local.name", "variable"),
+            ("pkg", "import pkg.name as child", "name = 1\n", "pkg.$local.name", "variable"),
+            ("pkg.sub", "import pkg.sub.name", "name = 1\n", "pkg.sub.$local.name", "variable"),
+            ("pkg", "import pkg.name", "def name(): pass\n", "pkg.name", "function"),
+            ("pkg", "import pkg.name", "class name: pass\n", "pkg.name", "class"),
+            ("pkg", "import pkg.name", "from .other import value as name\n", "pkg.other.$local.value", "variable"),
+            ("pkg", "import pkg.name", "if len(sys.argv) > 1:\n    name = 1\n", None, "unresolved"),
+        ):
+            with self.subTest(package=package, child_import=child_import, replacement=replacement):
+                directory = package.replace(".", "/")
+                temporary, _, graph = analyze_files({
+                    "main.py": f"from {package} import name\n",
+                    "pkg/__init__.py": "",
+                    f"{directory}/__init__.py": f"import sys\nif len(sys.argv) > 1:\n    {child_import}\n" + replacement,
+                    f"{directory}/name.py": "pass\n",
+                    f"{directory}/other.py": "value = 1\n",
+                })
+                with temporary:
+                    nodes = {node["id"]: node for node in graph["nodes"]}
+                    targets = [nodes[edge["target"]] for edge in graph["edges"]
+                               if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"]
+                    self.assertEqual([kind], [node["kind"] for node in targets])
+                    if target is not None:
+                        self.assertEqual([target], [node["qualifiedName"] for node in targets])
+                        self.assertEqual(1, sum(node["qualifiedName"] == target and node["kind"] == kind
+                                                for node in graph["nodes"]))
+
+    def test_circular_imports_use_bindings_available_before_the_pause(self):
+        for safe in (True, False):
+            with self.subTest(safe=safe):
+                temporary, _, graph = analyze_files({
+                    "main.py": "from a import public\n",
+                    "a.py": "value = object()\nfrom b import public\n" if safe else "from b import public\nvalue = object()\n",
+                    "b.py": "from a import value\npublic = object()\n",
+                })
+                with temporary:
+                    imports = relationship_set(graph, "imports")
+                    self.assertEqual(safe, "main -> b.$local.public" in imports)
+                    self.assertEqual(not safe, any(relation.startswith("main -> main::<unresolved>") for relation in imports))
+
+    def test_dotted_import_effects_follow_known_function_and_branch_execution(self):
+        cases = (
+            ("def unused():\n    import pkg.name\ndef read():\n    pkg.name()\n", "main.read", "function"),
+            ("def load():\n    import pkg.name\nload()\npkg.name()\n", "main", "module"),
+            ("if condition:\n    import pkg.name\npkg.name()\n", "main", "unresolved"),
+            ("if False:\n    import pkg.name\npkg.name()\n", "main", "function"),
+        )
+        for source, caller, expected_kind in cases:
+            with self.subTest(source=source):
+                temporary, _, graph = analyze_files({
+                    "main.py": "import pkg\n" + source,
+                    "pkg/__init__.py": "def name():\n    pass\n",
+                    "pkg/name.py": "pass\n",
+                })
+                with temporary:
+                    nodes = {node["id"]: node for node in graph["nodes"]}
+                    kinds = {nodes[edge["target"]]["kind"] for edge in graph["edges"]
+                             if edge["kind"] == "calls" and nodes[edge["source"]]["qualifiedName"] == caller
+                             and nodes[edge["target"]]["qualifiedName"] != "main.load"}
+                    self.assertEqual({expected_kind}, kinds)
+
     def test_resolvable_python_constructs_and_occurrences(self):
         temporary, _, graph = analyze_files({
             "main.py": (
