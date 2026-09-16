@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import time
 
@@ -675,6 +676,272 @@ def adversarial_metrics():
             for node in graph["nodes"] if node["unresolved"]
         )
         rows["reexportAndAlias"] = calls.count("main -> pkg.mod.f") == 2
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        (root / "api").mkdir()
+        (root / "main.py").write_text(
+            "from api import app as alias, conditional\n"
+            "from api import exported, public_alias, conditional_export\n"
+            "import api.app\nimport api.missing\nimport api.exported\n"
+        )
+        (root / "api/__init__.py").write_text(
+            "from .config import exported, aliased as public_alias, conditional_export\n"
+            "def create_app():\n    return object()\n"
+            "app = create_app()\n"
+            "if condition:\n    conditional = create_app()\n"
+        )
+        (root / "api/app.py").write_text("pass\n")
+        (root / "api/config.py").write_text(
+            "exported = object()\naliased = object()\n"
+            "if condition:\n    conditional_export = object()\n"
+        )
+        graph = analyze_repository(root)
+        imports = relationship_keys(graph, "imports")
+        rows["definiteModuleVariableImport"] = (
+            imports.count("main -> api.$local.app") == 1
+            and len([node for node in graph["nodes"] if node["qualifiedName"] == "api.$local.app"]) == 1
+            and "main -> api.config.$local.exported" in imports
+            and "main -> api.config.$local.aliased" in imports
+            and "main -> api.app" in imports
+            and "main -> main::<unresolved>@1:31:api.conditional" in imports
+            and "main -> main::<unresolved>@2:41:api.conditional_export" in imports
+            and "main -> main::<unresolved>@4:8:api.missing" in imports
+            and "main -> main::<unresolved>@5:8:api.exported" in imports
+        )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        (root / "main.py").write_text(
+            "from api import value, Value, run, public\nvalue()\nValue()\nrun()\n"
+        )
+        (root / "api/__init__.py").parent.mkdir()
+        (root / "api/__init__.py").write_text(
+            "def value():\n    pass\n"
+            "class Value:\n    pass\n"
+            "from .config import run\n"
+            "import dep as public\n"
+        )
+        (root / "api/config.py").write_text("def run():\n    pass\n")
+        (root / "api/value.py").write_text("def wrong():\n    pass\n")
+        (root / "api/Value.py").write_text("class Wrong:\n    pass\n")
+        (root / "api/run.py").write_text("def wrong():\n    pass\n")
+        (root / "dep.py").write_text("pass\n")
+        graph = analyze_repository(root)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        imports = relationship_keys(graph, "imports")
+        call_targets = {
+            (nodes[edge["source"]]["qualifiedName"], nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+            for edge in graph["edges"] if edge["kind"] == "calls"
+        }
+        construct_targets = {
+            (nodes[edge["source"]]["qualifiedName"], nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+            for edge in graph["edges"] if edge["kind"] == "constructs"
+        }
+        rows["packageAttributesBeatChildren"] = (
+            "main -> api.config.run" in imports
+            and "main -> dep" in imports
+            and ("main", "api.value", "function") in call_targets
+            and ("main", "api.value", "module") not in call_targets
+            and ("main", "api.config.run", "function") in call_targets
+            and ("main", "api.Value", "class") in construct_targets
+            and ("main", "api.Value", "module") not in construct_targets
+        )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        (root / "main.py").write_text("from api import value, conditional, final, unreachable\n")
+        (root / "api/__init__.py").parent.mkdir()
+        (root / "api/__init__.py").write_text(
+            "if condition:\n    def value():\n        pass\n"
+            "if condition:\n    from .config import conditional\n"
+            "from .config import final\n"
+            "final = object()\n"
+            "if False:\n    from .config import unreachable\n"
+        )
+        (root / "api/config.py").write_text(
+            "conditional = object()\nfinal = object()\nunreachable = object()\n"
+        )
+        (root / "api/value.py").write_text("pass\n")
+        (root / "api/conditional.py").write_text("pass\n")
+        graph = analyze_repository(root)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        main_imports = [
+            (nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+            for edge in graph["edges"]
+            if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+        ]
+        rows["conditionalAndSourceOrderBindings"] = (
+            ("api.$local.final", "variable") in main_imports
+            and not any(target == "api.config.$local.final" for target, _ in main_imports)
+            and any(kind == "unresolved" and target.endswith(":api.value") for target, kind in main_imports)
+            and any(kind == "unresolved" and target.endswith(":api.conditional") for target, kind in main_imports)
+            and any(kind == "unresolved" and target.endswith(":api.unreachable") for target, kind in main_imports)
+        )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        (root / "main.py").write_text("from b import public\n")
+        (root / "a.py").write_text("value = object()\nfrom b import public\n")
+        (root / "b.py").write_text("from a import value as public\n")
+        graph = analyze_repository(root)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        imports = relationship_keys(graph, "imports")
+        main_imports = [
+            (nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+            for edge in graph["edges"]
+            if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+        ]
+        rows["circularReexportsStayUnresolved"] = (
+            any(kind == "unresolved" and target.endswith(":b.public") for target, kind in main_imports)
+            and not any(target == "a.$local.value" for target, _ in main_imports)
+            and "b -> a.$local.value" in imports
+        )
+    import_cases = (
+        ("augmentedModuleBinding", {"main.py": "from api import app\n", "api/__init__.py": "app = 1\napp += 1\n"}, "import main; print(main.app)", "2", "api.$local.app", "variable"),
+        ("namedExpressionModuleBinding", {"main.py": "from api import app\n", "api/__init__.py": "(app := 1)\n"}, "import main; print(main.app)", "1", "api.$local.app", "variable"),
+        ("unboundAugmentedModuleBinding", {"main.py": "from api import app\n", "api/__init__.py": "app += 1\n"}, "try:\n import main\nexcept NameError:\n print('NameError')", "NameError", None, "unresolved"),
+        ("relativeChildImport", {"main.py": "from api import dep, alias\n", "api/__init__.py": "from . import dep\nfrom . import dep as alias\n", "api/dep.py": "pass\n"}, "import main; print(main.dep is main.alias)", "True", "api.dep", "module"),
+        ("dottedChildImportAndCalls", {"main.py": "import pkg.sub.name\nfrom pkg.sub import name\npkg.sub.name()\nname()\n", "pkg/__init__.py": "", "pkg/sub/__init__.py": "def name():\n    pass\n", "pkg/sub/name.py": "pass\n"}, "import pkg.sub.name; from pkg.sub import name; print(callable(name))", "False", "pkg.sub.name", "module"),
+        ("safeCircularImportOrder", {"main.py": "from a import public\n", "a.py": "value = object()\nfrom b import public\n", "b.py": "from a import value\npublic = object()\n"}, "import main, b; print(main.public is b.public)", "True", "b.$local.public", "variable"),
+        ("unsafeCircularImportOrder", {"main.py": "from a import public\n", "a.py": "from b import public\nvalue = object()\n", "b.py": "from a import value\npublic = object()\n"}, "try:\n import main\nexcept ImportError:\n print('ImportError')", "ImportError", None, "unresolved"),
+    )
+    binding_cases = (
+        ("assignmentRhsWalrus", "value = (app := 1)\n", True),
+        ("callArgumentWalrus", "str(app := 1)\n", True),
+        ("assertTestWalrus", "assert (app := 1)\n", True),
+        ("functionDefaultWalrus", "def function(value=(app := 1)):\n    pass\n", True),
+        ("lambdaDefaultWalrus", "function = lambda value=(app := 1): value\n", True),
+        ("selectedAndWalrus", "True and (app := 1)\n", True),
+        ("selectedOrWalrus", "False or (app := 1)\n", True),
+        ("selectedComparisonWalrus", "0 < 1 <= (app := 1)\n", True),
+        ("skippedComparisonWalrus", "1 < 0 < (app := 1)\n", False),
+        ("selectedConditionalWalrus", "value = (app := 1) if True else 0\n", True),
+        ("skippedAndWalrus", "False and (app := 1)\n", False),
+        ("skippedOrWalrus", "True or (app := 1)\n", False),
+        ("lazyLambdaWalrus", "function = lambda: (app := 1)\n", False),
+        ("lazyGeneratorWalrus", "values = ((app := 1) for item in [1])\n", False),
+        ("skippedAssertMessageWalrus", "assert True, (app := 1)\n", False),
+    )
+    import_cases += tuple(
+        (label, {"main.py": "from api import app\n", "api/__init__.py": source},
+         "try:\n import main\n print(main.app)\nexcept ImportError:\n print('unbound')",
+         "1" if definite else "unbound", "api.$local.app" if definite else None,
+         "variable" if definite else "unresolved")
+        for label, source, definite in binding_cases
+    )
+    for label, files, oracle, expected, target, kind in import_cases:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative, source in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source)
+            runtime = subprocess.run([sys.executable, "-c", oracle], cwd=root, capture_output=True, text=True, timeout=10)
+            graph = analyze_repository(root)
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            targets = [nodes[edge["target"]] for edge in graph["edges"]
+                       if nodes[edge["source"]]["qualifiedName"] == "main" and edge["kind"] in {"imports", "calls"}]
+            rows[label] = runtime.returncode == 0 and runtime.stdout.strip() == expected and bool(targets) and all(
+                node["kind"] == kind and (target is None or node["qualifiedName"] == target) for node in targets
+            )
+    for label, package, child_import, replacement, target, kind, runtime_kinds in (
+        ("definiteExportAfterConditionalChild", "pkg", "import pkg.name", "name = 1\n", "pkg.$local.name", "variable", ["int", "int"]),
+        ("definiteExportAfterConditionalChildAlias", "pkg", "import pkg.name as child", "name = 1\n", "pkg.$local.name", "variable", ["int", "int"]),
+        ("nestedDefiniteExportAfterConditionalChild", "pkg.sub", "import pkg.sub.name", "name = 1\n", "pkg.sub.$local.name", "variable", ["int", "int"]),
+        ("functionAfterConditionalChild", "pkg", "import pkg.name", "def name(): pass\n", "pkg.name", "function", ["function", "function"]),
+        ("classAfterConditionalChild", "pkg", "import pkg.name", "class name: pass\n", "pkg.name", "class", ["type", "type"]),
+        ("reexportAfterConditionalChild", "pkg", "import pkg.name", "from .other import value as name\n", "pkg.other.$local.value", "variable", ["int", "int"]),
+        ("conditionalExportAfterConditionalChild", "pkg", "import pkg.name", "if len(sys.argv) > 1:\n    name = 1\n", None, "unresolved", ["module", "int"]),
+    ):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = package.replace(".", "/")
+            files = {
+                "main.py": f"from {package} import name\n",
+                "pkg/__init__.py": "",
+                f"{directory}/__init__.py": f"import sys\nif len(sys.argv) > 1:\n    {child_import}\n" + replacement,
+                f"{directory}/name.py": "pass\n",
+                f"{directory}/other.py": "value = 1\n",
+            }
+            for relative, source in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source)
+            outcomes = [subprocess.run([sys.executable, "-c", "import main; print(type(main.name).__name__)", *args],
+                                      cwd=root, capture_output=True, text=True, timeout=10) for args in ([], ["enable"])]
+            graph = analyze_repository(root)
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            targets = [nodes[edge["target"]] for edge in graph["edges"]
+                       if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"]
+            rows[label] = (
+                all(outcome.returncode == 0 for outcome in outcomes)
+                and [outcome.stdout.strip() for outcome in outcomes] == runtime_kinds
+                and [node["kind"] for node in targets] == [kind]
+                and (target is None or (
+                    [node["qualifiedName"] for node in targets] == [target]
+                    and sum(node["qualifiedName"] == target and node["kind"] == kind for node in graph["nodes"]) == 1
+                ))
+            )
+    for before in ("", "name = 1\n"):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pkg").mkdir()
+            (root / "main.py").write_text("from pkg import name\n")
+            (root / "pkg/__init__.py").write_text(before + "import sys\nif len(sys.argv) > 1:\n    from .other import *\n")
+            (root / "pkg/other.py").write_text("name = 42\n")
+            (root / "pkg/name.py").write_text("pass\n")
+            outcomes = [subprocess.run([sys.executable, "-c", "import main; print(getattr(main.name, '__name__', main.name))", *args],
+                                      cwd=root, capture_output=True, text=True, timeout=10) for args in ([], ["enable"])]
+            graph = analyze_repository(root)
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            kinds = [nodes[edge["target"]]["kind"] for edge in graph["edges"]
+                     if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"]
+            rows["conditionalWildcardOverwrite" + ("Existing" if before else "Missing")] = (
+                all(outcome.returncode == 0 for outcome in outcomes)
+                and [outcome.stdout.strip() for outcome in outcomes] == (["1", "42"] if before else ["pkg.name", "42"])
+                and kinds == ["unresolved"]
+            )
+    for label, package, helper, expected, runtime_kind in (
+        ("transitiveChildImport", "def name(): pass\n", "import pkg.name\n", "module", "module"),
+        ("cachedChildImportPreservesAssignment", "import pkg.name\nname = object()\n", "import pkg.name\n", "variable", "object"),
+        ("conditionalTransitiveImport", "def name(): pass\n", "import sys\nif len(sys.argv) > 1:\n    import pkg.name\n", "unresolved", "function"),
+    ):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pkg").mkdir()
+            (root / "main.py").write_text("import helper\nfrom pkg import name\n")
+            (root / "helper.py").write_text(helper)
+            (root / "pkg/__init__.py").write_text(package)
+            (root / "pkg/name.py").write_text("pass\n")
+            runtime = subprocess.run([sys.executable, "-c", "import main; print(type(main.name).__name__)"],
+                                     cwd=root, capture_output=True, text=True, timeout=10)
+            graph = analyze_repository(root)
+            nodes = {node["id"]: node for node in graph["nodes"]}
+            targets = [nodes[edge["target"]] for edge in graph["edges"]
+                       if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+                       and edge["range"]["start"]["line"] == 2]
+            rows[label] = (runtime.returncode == 0 and runtime.stdout.strip() == runtime_kind
+                           and [node["kind"] for node in targets] == [expected])
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        (root / "main.py").write_text(
+            "import ns\nimport ns.mod\nimport ns.pkg.mod\nfrom ns import missing\n"
+        )
+        (root / "ns/mod.py").parent.mkdir(parents=True)
+        (root / "ns/mod.py").write_text("pass\n")
+        (root / "ns/pkg/mod.py").parent.mkdir(parents=True)
+        (root / "ns/pkg/mod.py").write_text("pass\n")
+        graph = analyze_repository(root)
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        main_imports = [
+            (nodes[edge["target"]]["qualifiedName"], nodes[edge["target"]]["kind"])
+            for edge in graph["edges"]
+            if edge["kind"] == "imports" and nodes[edge["source"]]["qualifiedName"] == "main"
+        ]
+        rows["namespaceRootsAndMissingAttributes"] = (
+            ("ns", "package") in main_imports
+            and ("ns.mod", "module") in main_imports
+            and ("ns.pkg.mod", "module") in main_imports
+            and not any(kind == "unresolved" and target.endswith(":ns") for target, kind in main_imports)
+            and any(kind == "unresolved" and target.endswith(":ns.missing") for target, kind in main_imports)
+        )
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         (root / "main.py").write_text(

@@ -23,6 +23,12 @@ describe("web canvas product contract eval", () => {
     expect(visible.nodes.some((node) => node.kind === "module" || node.kind === "package" || node.test)).toBe(false);
   });
 
+  it("keeps module relationships visible at their file boundaries", () => {
+    const visible = buildVisibleGraph(mockGraph, defaultFilters(), "repository", new Set());
+    expect(visible.nodes.some((node) => node.kind === "module")).toBe(false);
+    expect(visible.edges).toContainEqual(expect.objectContaining({ kind: "imports", source: "file:src/main.py", target: "file:src/game.py" }));
+  });
+
   it("honors explicit config selections without changing defaults", () => {
     const filters = filtersFromPreferences({
       initialView: "repository", showModules: true, includeTests: true,
@@ -141,6 +147,6 @@ describe("web canvas product contract eval", () => {
     };
     const visible = buildVisibleGraph(document, defaultFilters(), "repository", new Set());
     expect(visible.nodes.filter((node) => node.kind === "external_package")).toHaveLength(1);
-    expect(visible.edges.find((edge) => edge.target === "group:external:rich")?.count).toBe(2);
+    expect(visible.edges.find((edge) => edge.kind === "api_calls" && edge.target === "group:external:rich")?.count).toBe(2);
   });
 });

@@ -100,6 +100,38 @@ test("a stale dialog cannot approve a command that was never shown", async ({ pa
   expect(state.running).toBe(false);
 });
 
+test("analyzer file and module names remain distinct command choices", async ({ page }) => {
+  await mockLiveHost(page);
+  await page.getByRole("button", { name: "Search symbols or commands" }).click();
+  await page.getByRole("textbox", { name: "Search symbols or commands" }).fill("game.py");
+  const dialog = page.getByRole("dialog", { name: "Search code and run commands" });
+  await expect(dialog.getByRole("option", { name: "game.py module", exact: true })).toBeVisible();
+  await dialog.getByRole("option", { name: "game.py file", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Symbol details" })).toContainText("file:tictactoe/game.py");
+});
+
+test("relationship Inspector keeps aggregate evidence selected as occurrences change", async ({ page }) => {
+  const state = await mockLiveHost(page);
+  const document = normalizeGraphPayload({ generation: 7, graph: state.graph });
+  const visible = buildVisibleGraph(document, defaultFilters(), "repository", new Set());
+  const call = visible.edges.find((edge) => edge.kind === "calls" && edge.count === 1)!;
+  const raw = state.graph.edges.find((edge: { kind: string; source: string; target: string }) => edge.kind === "calls" && edge.source === call.source && edge.target === call.target)!;
+  const selector = page.getByRole("combobox", { name: "Select any relationship in the filtered graph" });
+  await selector.selectOption(call.id);
+  const inspector = page.getByRole("complementary", { name: "Relationship details" });
+  await expect(inspector).toContainText("1 occurrence");
+  state.graph.edges.push({ ...raw, id: "duplicate-inspector-call" });
+  state.generation = 8;
+  await expect(page.locator(".generation")).toHaveAttribute("title", "Revision 8");
+  await expect(inspector).toContainText("2 occurrences");
+  await expect(selector).toHaveValue(call.id);
+  state.graph.edges.pop();
+  state.generation = 9;
+  await expect(page.locator(".generation")).toHaveAttribute("title", "Revision 9");
+  await expect(inspector).toContainText("1 occurrence");
+  await expect(selector).toHaveValue(call.id);
+});
+
 for (const tenFiles of [false, true]) test(`${tenFiles ? "ten-file" : "real Python"} flow preserves exact edges, readable endpoints, and scoped export`, async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (["error", "warning"].includes(message.type())) errors.push(message.text()); });
@@ -150,6 +182,8 @@ test("delayed occurrence evidence cannot replace a newly selected relationship",
   const edges = document.edges.filter((edge) => edge.kind === "calls" && edge.locations?.length);
   const first = edges[0];
   const second = edges.find((edge) => edge.locations![0].path !== first.locations![0].path)!;
+  const displayed = buildVisibleGraph(document, defaultFilters(), "repository", new Set()).edges;
+  const displayedId = (edge: typeof first) => displayed.find((item) => item.kind === edge.kind && item.source === edge.source && item.target === edge.target)!.id;
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   let captured!: (route: Route) => void;
@@ -162,10 +196,10 @@ test("delayed occurrence evidence cannot replace a newly selected relationship",
     await route.fulfill({ json: { path: range.path, startLine: range.start.line, endLine: range.end.line, text: "STALE_OCCURRENCE_EVIDENCE" } });
   });
   const selector = page.getByRole("combobox", { name: "Select any relationship in the filtered graph" });
-  await selector.selectOption(first.id);
+  await selector.selectOption(displayedId(first));
   await page.locator(".occurrence-row > button").first().click();
   await request;
-  await selector.selectOption(second.id);
+  await selector.selectOption(displayedId(second));
   await page.locator(".occurrence-row > button").first().click();
   await expect(page.locator(".source-view__path")).toContainText(second.locations![0].path);
   const response = page.waitForResponse((item) => item.url().includes("/api/v1/source?") && new URL(item.url()).searchParams.get("path") === first.locations![0].path);
@@ -231,7 +265,7 @@ test("mobile code-flow workflow stays local, reachable, and motion-safe", async 
 
   await page.getByRole("button", { name: "Search symbols or commands" }).click();
   await page.getByRole("textbox", { name: "Search symbols or commands" }).fill("game.py");
-  await page.getByRole("option", { name: /game\.py/ }).first().click();
+  await page.getByRole("dialog", { name: "Search code and run commands" }).getByRole("option", { name: "game.py file", exact: true }).click();
   const graph = page.getByRole("application", { name: /Interactive repository dependency graph/ });
   await graph.focus();
   await graph.press("Enter");
@@ -244,7 +278,7 @@ test("mobile code-flow workflow stays local, reachable, and motion-safe", async 
 
   await page.getByRole("button", { name: "Search symbols or commands" }).click();
   await page.getByRole("textbox", { name: "Search symbols or commands" }).fill("Game.play");
-  await page.getByRole("option", { name: /play/ }).first().click();
+  await page.getByRole("dialog", { name: "Search code and run commands" }).getByRole("option", { name: "play method", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Symbol details" })).toContainText("src.game.Game.play");
   await page.getByRole("button", { name: "Toggle graph filters" }).click();
   await expect(page.getByRole("complementary", { name: "Graph filters" })).toBeVisible();

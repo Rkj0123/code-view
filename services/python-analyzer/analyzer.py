@@ -531,6 +531,7 @@ def contains_main_guard(tree: ast.Module) -> bool:
 
 
 UNKNOWN_VALUE = object()
+UNCERTAIN_BINDING = object()
 COMPARISONS = {
     ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
     ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
@@ -740,7 +741,11 @@ class Analyzer:
         self.blocked_module_names: set[str] = set()
         self.nodes_by_qualified: dict[str, str] = {}
         self.ambiguous_qualified: set[str] = set()
+        self.module_variables: dict[str, str] = {}
+        self.module_binding_events: dict[str, list[tuple[str, str, Any]]] = {}
+        self.module_wildcards: set[str] = set()
         self.import_specs: dict[str, list[tuple[str, ast.Import | ast.ImportFrom]]] = {}
+        self.import_edges: dict[int, str] = {}
 
     def analyze(self, files: list[Path], entry: Path | None) -> dict[str, Any]:
         repository_id = self.graph.add_node("repository", self.root.name, ".", None, language=None)
@@ -764,6 +769,7 @@ class Analyzer:
                 self.nodes_by_qualified.pop(qualified, None)
             elif qualified not in self.ambiguous_qualified:
                 self.nodes_by_qualified[qualified] = node_id
+        self._collect_module_variables()
         self._collect_imports()
         for module in self.module_list:
             RelationshipCollector(self, module).visit(module.tree)
@@ -847,15 +853,31 @@ class Analyzer:
                 self.modules[name] = module
             self.module_list.append(module)
 
+    def _collect_module_variables(self) -> None:
+        for module in self.module_list:
+            assignments: dict[str, ast.AST] = {}
+            for name, kind, payload in self._module_statement_events(module):
+                if kind in {"assignment", "augmented"}:
+                    assignments[name] = payload
+            for name, at in assignments.items():
+                qualified_name = f"{module.name}.$local.{name}"
+                node_id = self.graph.add_node(
+                    "variable", name, qualified_name, module.relative_path,
+                    node_range(at), modifiers=("local",),
+                )
+                self.graph.add_edge("contains", module.node_id, node_id, module.relative_path, at)
+                self.module_variables[f"{module.name}.{name}"] = node_id
+
     def _collect_imports(self) -> None:
         for module in self.module_list:
             self.import_specs[module.node_id] = ImportCollector(module).collect()
+        self._prepare_module_bindings()
         for module in self.module_list:
             for owner, node in self.import_specs[module.node_id]:
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         target_name = alias.name
-                        import_target = self.resolve_absolute(target_name, module, alias)
+                        import_target = self.resolve_absolute(target_name, module, alias, module_only=True)
                         self.graph.add_edge("imports", owner, import_target.node_id, module.relative_path, alias)
                 else:
                     base = self._absolute_from(module, node.module, node.level)
@@ -870,7 +892,7 @@ class Analyzer:
                             )
                             if binding.category == "external" and node.level:
                                 binding = self.graph.add_unresolved(module, f"{base}.{alias.name}", alias, "missing relative import")
-                        self.graph.add_edge("imports", owner, binding.node_id, module.relative_path, alias)
+                        self.import_edges[id(alias)] = self.graph.add_edge("imports", owner, binding.node_id, module.relative_path, alias)
 
     def _absolute_from(self, module: ModuleInfo, imported: str | None, level: int) -> str:
         if not level:
@@ -885,11 +907,309 @@ class Analyzer:
             base.extend(imported.split("."))
         return ".".join(base)
 
+    @staticmethod
+    def _assignment_targets(statement: ast.Assign | ast.AnnAssign | ast.AugAssign | ast.NamedExpr) -> list[tuple[str, ast.Name]]:
+        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+        result: list[tuple[str, ast.Name]] = []
+        seen: set[str] = set()
+        for target in targets:
+            for child in ast.walk(target):
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store) and child.id not in seen:
+                    seen.add(child.id)
+                    result.append((child.id, child))
+        return result
+
+    def _module_statement_events(self, module: ModuleInfo) -> list[tuple[str, str, Any]]:
+        events: list[tuple[str, str, Any]] = []
+
+        def expression(node: ast.AST, definite: bool = True) -> None:
+            if isinstance(node, ast.NamedExpr):
+                expression(node.value, definite)
+                events.append((node.target.id, "assignment" if definite else "uncertain", node.target))
+            elif isinstance(node, ast.Lambda):
+                for default in [*node.args.defaults, *node.args.kw_defaults]:
+                    if default is not None:
+                        expression(default, definite)
+            elif isinstance(node, ast.BoolOp):
+                for value in node.values:
+                    expression(value, definite)
+                    truth = literal_truth(value)
+                    if truth is (False if isinstance(node.op, ast.And) else True):
+                        break
+                    if truth is None:
+                        definite = False
+            elif isinstance(node, ast.Compare):
+                left = node.left
+                expression(left, definite)
+                for operation, right in zip(node.ops, node.comparators):
+                    expression(right, definite)
+                    first, second = literal_value(left), literal_value(right)
+                    compare = COMPARISONS.get(type(operation))
+                    truth = None
+                    if compare and first is not UNKNOWN_VALUE and second is not UNKNOWN_VALUE:
+                        try:
+                            truth = bool(compare(first, second))
+                        except (TypeError, ValueError):
+                            pass
+                    if truth is False:
+                        break
+                    if truth is None:
+                        definite = False
+                    left = right
+            elif isinstance(node, ast.IfExp):
+                expression(node.test, definite)
+                truth = literal_truth(node.test)
+                if truth is not None:
+                    expression(node.body if truth else node.orelse, definite)
+                else:
+                    expression(node.body, False)
+                    expression(node.orelse, False)
+            elif isinstance(node, (ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp)):
+                expression(node.generators[0].iter, definite)
+                if not isinstance(node, ast.GeneratorExp):
+                    for child in ast.iter_child_nodes(node):
+                        expression(child, False)
+            else:
+                for child in ast.iter_child_nodes(node):
+                    expression(child, definite)
+
+        def eager_expressions(statement: ast.stmt) -> None:
+            if isinstance(statement, ast.Assert):
+                expression(statement.test)
+                truth = literal_truth(statement.test)
+                if statement.msg is not None and truth is not True:
+                    expression(statement.msg, False)
+                return
+            # Bodies are visited with their own execution certainty below.
+            for key, value in ast.iter_fields(statement):
+                if key in {"body", "orelse", "finalbody", "handlers", "cases", "annotation", "returns", "type_params"}:
+                    continue
+                if isinstance(value, ast.arguments):
+                    for default in [*value.defaults, *value.kw_defaults]:
+                        if default is not None:
+                            expression(default)
+                else:
+                    for child in value if isinstance(value, list) else [value]:
+                        if isinstance(child, (ast.expr, ast.keyword, ast.withitem)):
+                            expression(child)
+
+        def uncertain(statement: ast.stmt) -> None:
+            collector = LocalAssignmentCollector()
+            if isinstance(statement, (ast.If, ast.While, ast.For, ast.AsyncFor)):
+                if isinstance(statement, (ast.For, ast.AsyncFor)):
+                    collector.visit(statement.target)
+                for child in [*statement.body, *statement.orelse]:
+                    collector.visit(child)
+            elif isinstance(statement, (ast.With, ast.AsyncWith)):
+                for item in statement.items:
+                    if item.optional_vars is not None:
+                        collector.visit(item.optional_vars)
+                for child in statement.body:
+                    collector.visit(child)
+            elif isinstance(statement, ast.Match):
+                for case in statement.cases:
+                    collector.visit(case)
+            else:
+                collector.visit(statement)
+            for imported in collector.imports:
+                events.extend(("", "conditional_import", (imported, alias)) for alias in imported.names if alias.name != "*")
+                if isinstance(imported, ast.ImportFrom) and any(alias.name == "*" for alias in imported.names):
+                    self.module_wildcards.add(module.name)
+                    events.append(("*", "wildcard", imported))
+            for name in collector.names:
+                events.append((name, "uncertain", statement))
+
+        def visit(statements: Iterable[ast.stmt]) -> None:
+            for statement in statements:
+                eager_expressions(statement)
+                if isinstance(statement, ast.Assign):
+                    events.extend((name, "assignment", at) for name, at in self._assignment_targets(statement))
+                elif isinstance(statement, ast.AnnAssign):
+                    if statement.value is not None:
+                        events.extend((name, "assignment", at) for name, at in self._assignment_targets(statement))
+                elif isinstance(statement, ast.AugAssign):
+                    events.extend((name, "augmented", at) for name, at in self._assignment_targets(statement))
+                elif isinstance(statement, (ast.Expr, ast.Assert)):
+                    pass
+                elif isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    events.append((statement.name, "definition", statement))
+                elif isinstance(statement, ast.Import):
+                    events.extend(
+                        (alias.asname or alias.name.split(".", 1)[0], "import", (statement, alias))
+                        for alias in statement.names
+                    )
+                elif isinstance(statement, ast.ImportFrom):
+                    for alias in statement.names:
+                        if alias.name == "*":
+                            self.module_wildcards.add(module.name)
+                            events.append(("*", "wildcard", statement))
+                        else:
+                            events.append((alias.asname or alias.name, "import", (statement, alias)))
+                elif isinstance(statement, ast.If):
+                    truth = literal_truth(statement.test)
+                    if truth is True:
+                        visit(statement.body)
+                    elif truth is False:
+                        visit(statement.orelse)
+                    else:
+                        uncertain(statement)
+                elif isinstance(statement, (ast.For, ast.AsyncFor)):
+                    value = literal_value(statement.iter)
+                    if value is not UNKNOWN_VALUE and isinstance(value, (list, tuple, set, frozenset, dict)) and not value:
+                        visit(statement.orelse)
+                    else:
+                        uncertain(statement)
+                elif isinstance(statement, ast.While) and literal_truth(statement.test) is False:
+                    visit(statement.orelse)
+                else:
+                    uncertain(statement)
+
+        visit(module.tree.body)
+        return events
+
+    def _prepare_module_bindings(self) -> None:
+        self.module_binding_events = {
+            module.name: self._module_statement_events(module) for module in self.module_list
+        }
+
+    def _package_node(self, qualified_name: str) -> str | None:
+        node_id = self.nodes_by_qualified.get(qualified_name)
+        return node_id if node_id and self.graph.nodes[node_id]["kind"] == "package" else None
+
+    def _module_or_package(self, qualified_name: str) -> bool:
+        return qualified_name in self.modules or self._package_node(qualified_name) is not None
+
+    def _is_internal_name(self, qualified_name: str) -> bool:
+        root_name = qualified_name.split(".", 1)[0]
+        return any(
+            name == root_name or name.startswith(root_name + ".")
+            for name in [*self.modules, *(node["qualifiedName"] for node in self.graph.nodes.values() if node["kind"] == "package")]
+        )
+
+    def _import_module(
+        self, name: str, state: tuple[dict[str, dict[str, Binding | object]], set[str], set[str], set[str]]
+    ) -> bool:
+        modules, failed, _, uncertain = state
+        parts = name.split(".")
+        dependencies = [".".join(parts[:count]) for count in range(1, len(parts) + 1)]
+        for dependency in dependencies:
+            loaded = dependency in modules
+            self._module_exports(dependency, state)
+            parent, _, child = dependency.rpartition(".")
+            if not loaded and parent in modules and self._module_or_package(dependency):
+                modules[parent][child] = self.resolve_absolute(dependency, module_only=True)
+                uncertain.discard(dependency)
+        return not any(dependency in failed for dependency in dependencies)
+
+    def _module_exports(
+        self,
+        module_name_value: str,
+        state: tuple[dict[str, dict[str, Binding | object]], set[str], set[str], set[str]],
+    ) -> dict[str, Binding | object]:
+        modules, failed, loading, uncertain = state
+        if module_name_value in modules:
+            # A circular import sees only bindings made before its import paused.
+            return modules[module_name_value]
+        module = self.modules.get(module_name_value)
+        if not module:
+            return {}
+        exports = modules[module_name_value] = {}
+        loading.add(module_name_value)
+        # Earlier conditional loads may already have executed this module and then
+        # replaced its attributes. Replaying its body cannot erase that uncertainty.
+        inherited_uncertain = set(uncertain)
+        for name, kind, payload in self.module_binding_events.get(module_name_value, ()):
+            if kind == "wildcard":
+                exports.update((key, UNCERTAIN_BINDING) for key in exports)
+                continue
+            if kind == "conditional_import":
+                possible = ({key: dict(value) for key, value in modules.items()}, set(failed), set(loading), set(uncertain))
+                statement, alias = payload
+                if isinstance(statement, ast.Import):
+                    self._import_module(alias.name, possible)
+                else:
+                    base = self._absolute_from(module, statement.module, statement.level)
+                    self._import_module(base, possible)
+                    target = self.resolve_absolute(f"{base}.{alias.name}" if base else alias.name, module, alias, _state=possible)
+                    if target.category == "module":
+                        self._import_module(target.qualified_name, possible)
+                uncertain.update(possible[3])
+                for key, values in possible[0].items():
+                    before = modules.get(key, {})
+                    uncertain.update(f"{key}.{symbol}" for symbol in before.keys() | values.keys() if before.get(symbol) != values.get(symbol))
+                continue
+            if kind == "uncertain":
+                exports[name] = UNCERTAIN_BINDING
+                continue
+            if kind in {"assignment", "augmented"}:
+                node_id = self.module_variables.get(f"{module_name_value}.{name}")
+                if kind == "augmented" and (
+                    not isinstance(exports.get(name), Binding) or f"{module_name_value}.{name}" in uncertain
+                ):
+                    node_id = None
+                exports[name] = (
+                    Binding(node_id, self.graph.nodes[node_id]["qualifiedName"], "symbol")
+                    if node_id else UNCERTAIN_BINDING
+                )
+                if f"{module_name_value}.{name}" not in inherited_uncertain:
+                    uncertain.discard(f"{module_name_value}.{name}")
+                continue
+            if kind == "definition":
+                qualified_name = f"{module_name_value}.{name}"
+                node_id = module.symbols.get(id(payload))
+                if (
+                    not node_id
+                    or name in module.ambiguous_names.get(module.node_id, set())
+                    or qualified_name in self.ambiguous_qualified
+                ):
+                    exports[name] = UNCERTAIN_BINDING
+                else:
+                    node = self.graph.nodes[node_id]
+                    exports[name] = Binding(
+                        node_id,
+                        qualified_name,
+                        "class" if node["kind"] == "class" else "symbol",
+                    )
+                if qualified_name not in inherited_uncertain:
+                    uncertain.discard(qualified_name)
+                continue
+            statement, alias = payload
+            if isinstance(statement, ast.Import):
+                if not self._import_module(alias.name, state):
+                    failed.add(module_name_value)
+                target_name = alias.name if alias.asname else alias.name.split(".", 1)[0]
+                target = self.resolve_absolute(
+                    target_name, module, alias, module_only=True
+                )
+            else:
+                base = self._absolute_from(module, statement.module, statement.level)
+                target = self.resolve_absolute(
+                    f"{base}.{alias.name}" if base else alias.name,
+                    module,
+                    alias,
+                    _state=state,
+                )
+                if base in failed:
+                    failed.add(module_name_value)
+                if target.category == "module":
+                    if not self._import_module(target.qualified_name, state):
+                        failed.add(module_name_value)
+                    if base in modules and target.qualified_name == f"{base}.{alias.name}":
+                        modules[base].setdefault(alias.name, target)
+            exports[name] = target if target.category != "unresolved" else UNCERTAIN_BINDING
+            if f"{module_name_value}.{name}" not in inherited_uncertain:
+                uncertain.discard(f"{module_name_value}.{name}")
+        loading.remove(module_name_value)
+        return exports
+
     def resolve_absolute(
         self,
         qualified_name: str,
         context_module: ModuleInfo | None = None,
         at: ast.AST | None = None,
+        *,
+        module_only: bool = False,
+        _state: tuple[dict[str, dict[str, Binding | object]], set[str], set[str], set[str]] | None = None,
     ) -> Binding:
         collision = next((name for name in self.module_collisions if qualified_name == name or qualified_name.startswith(name + ".")), None)
         if collision:
@@ -902,59 +1222,52 @@ class Analyzer:
         if qualified_name in self.ambiguous_qualified:
             module = context_module or next(iter(self.module_list))
             return self.graph.add_unresolved(module, qualified_name, at or module.tree, "multiple definitions cannot be resolved statically")
+        if module_only:
+            if qualified_name in self.modules:
+                return Binding(self.modules[qualified_name].node_id, qualified_name, "module")
+            if package_id := self._package_node(qualified_name):
+                return Binding(package_id, qualified_name, "module")
+            if self._is_internal_name(qualified_name):
+                module = context_module or next(iter(self.module_list))
+                return self.graph.add_unresolved(module, qualified_name, at or module.tree, "internal symbol not found")
+            return self.graph.add_external(qualified_name)
+        module_name_part, separator, symbol = qualified_name.rpartition(".")
+        if separator and self._module_or_package(module_name_part):
+            state = _state if _state is not None else ({}, set(), set(), set())
+            exports = self._module_exports(module_name_part, state)
+            resolved = exports.get(symbol)
+            if resolved is None and module_name_part in state[2] and not self._module_or_package(qualified_name):
+                state[1].add(module_name_part)
+            if qualified_name in state[3] or module_name_part in state[1] or resolved is None and module_name_part in self.module_wildcards:
+                resolved = UNCERTAIN_BINDING
+            if isinstance(resolved, Binding):
+                return resolved
+            if resolved is UNCERTAIN_BINDING or self._is_internal_name(qualified_name) and not self._module_or_package(qualified_name):
+                module = context_module or self.modules.get(module_name_part) or next(iter(self.module_list))
+                return self.graph.add_unresolved(module, qualified_name, at or module.tree, "internal symbol not found")
+            if qualified_name in self.modules:
+                return Binding(self.modules[qualified_name].node_id, qualified_name, "module")
+            if package_id := self._package_node(qualified_name):
+                return Binding(package_id, qualified_name, "module")
+            return self.graph.add_external(qualified_name)
         if qualified_name in self.modules:
             return Binding(self.modules[qualified_name].node_id, qualified_name, "module")
+        if package_id := self._package_node(qualified_name):
+            return Binding(package_id, qualified_name, "module")
         if qualified_name in self.nodes_by_qualified:
             node_id = self.nodes_by_qualified[qualified_name]
             kind = self.graph.nodes[node_id]["kind"]
             category = "class" if kind == "class" else "module" if kind in {"module", "package"} else "symbol"
             return Binding(node_id, qualified_name, category)
-        package_id = self.nodes_by_qualified.get(qualified_name)
-        if package_id:
-            return Binding(package_id, qualified_name, "module")
-        root_name = qualified_name.split(".", 1)[0]
-        if root_name in self.modules or any(name.startswith(root_name + ".") for name in self.modules):
-            module_name_part, _, symbol = qualified_name.rpartition(".")
-            if module_name_part in self.modules:
-                reexport = self._resolve_reexport(module_name_part, symbol, set())
-                if reexport:
-                    return reexport
-            module = next((item for name, item in self.modules.items() if qualified_name.startswith(name + ".")), None)
-            if module:
-                return self.graph.add_unresolved(
-                    context_module or module,
-                    qualified_name,
-                    at or module.tree,
-                    "internal symbol not found",
-                )
+        if self._is_internal_name(qualified_name):
+            module = context_module or next(iter(self.module_list))
+            return self.graph.add_unresolved(module, qualified_name, at or module.tree, "internal symbol not found")
         return self.graph.add_external(qualified_name)
-
-    def _resolve_reexport(self, module_name_value: str, symbol: str, seen: set[tuple[str, str]]) -> Binding | None:
-        key = (module_name_value, symbol)
-        if key in seen:
-            return None
-        seen.add(key)
-        module = self.modules[module_name_value]
-        for owner, node in self.import_specs.get(module.node_id, []):
-            if owner != module.node_id or not isinstance(node, ast.ImportFrom):
-                continue
-            for alias in node.names:
-                if (alias.asname or alias.name) != symbol:
-                    continue
-                base = self._absolute_from(module, node.module, node.level)
-                target = f"{base}.{alias.name}" if base else alias.name
-                if target in self.nodes_by_qualified:
-                    node_id = self.nodes_by_qualified[target]
-                    kind = self.graph.nodes[node_id]["kind"]
-                    return Binding(node_id, target, "class" if kind == "class" else "symbol")
-                parent, _, child = target.rpartition(".")
-                return self._resolve_reexport(parent, child, seen) if parent in self.modules else None
-        return None
-
 
 class LocalAssignmentCollector(ast.NodeVisitor):
     def __init__(self) -> None:
         self.names: dict[str, ast.AST] = {}
+        self.imports: list[ast.Import | ast.ImportFrom] = []
         self.globals: set[str] = set()
         self.nonlocals: set[str] = set()
 
@@ -969,10 +1282,12 @@ class LocalAssignmentCollector(ast.NodeVisitor):
     visit_ClassDef = visit_FunctionDef
 
     def visit_Import(self, node: ast.Import) -> None:
+        self.imports.append(node)
         for alias in node.names:
             self.names.setdefault(alias.asname or alias.name.split(".")[0], alias)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.imports.append(node)
         for alias in node.names:
             if alias.name != "*":
                 self.names.setdefault(alias.asname or alias.name, alias)
@@ -1069,6 +1384,8 @@ class RelationshipCollector(ast.NodeVisitor):
         self.suspend_at_yield_depth = 0
         self.yields_to_skip = 0
         self.control_depth = 0
+        self.module_import_state: tuple[dict[str, dict[str, Binding | object]], set[str], set[str], set[str]] = ({}, set(), set(), set())
+        self.uncertain_module_imports: set[str] = set()
 
     @property
     def scope(self) -> str:
@@ -1187,6 +1504,11 @@ class RelationshipCollector(ast.NodeVisitor):
         if not context or node_id in self.active_functions:
             return None
         node, scopes, classes = context
+        import_snapshot = (
+            ({name: dict(exports) for name, exports in self.module_import_state[0].items()},
+             set(self.module_import_state[1]), set(self.module_import_state[2]), set(self.module_import_state[3])),
+            set(self.uncertain_module_imports),
+        ) if isolated else None
         snapshots = {
             scope: (
                 dict(self.variable_bindings.get(scope, {})),
@@ -1236,6 +1558,15 @@ class RelationshipCollector(ast.NodeVisitor):
             self.scope_stack, self.class_stack = saved_scopes, saved_classes
             self.flow_terminated = saved_terminated
             self.raised_exception = saved_exception
+            if import_snapshot is not None:
+                previous, uncertain = import_snapshot
+                if merge:
+                    previous[3].update(self.module_import_state[3])
+                    uncertain |= self.uncertain_module_imports | (self.module_import_state[0].keys() - previous[0].keys())
+                    for module_name, exports in self.module_import_state[0].items():
+                        before = previous[0].get(module_name, {})
+                        uncertain.update(f"{module_name}.{name}" for name in before.keys() | exports.keys() if before.get(name) != exports.get(name))
+                self.module_import_state, self.uncertain_module_imports = previous, uncertain
             for scope, (bindings, types, aliases, deferred, mappings, truths) in snapshots.items():
                 changed = {
                     name
@@ -1419,13 +1750,20 @@ class RelationshipCollector(ast.NodeVisitor):
             self.deferred_values.setdefault(owner, {}).pop(bound_name, None)
             self.literal_mappings.setdefault(owner, {}).pop(bound_name, None)
             self.literal_truths.setdefault(owner, {}).pop(bound_name, None)
+            target = self.analyzer.resolve_absolute(alias.name, self.module, alias, module_only=True)
+            if target.category == "module":
+                parts = alias.name.split(".")
+                imported = {".".join(parts[:count]) for count in range(1, len(parts) + 1)}
+                if self.control_depth:
+                    self.uncertain_module_imports.update(imported - self.module_import_state[0].keys())
             if self.control_depth:
                 aliases.pop(bound_name, None)
                 self.variable_bindings.setdefault(owner, {}).pop(bound_name, None)
                 continue
-            target = self.analyzer.resolve_absolute(alias.name, self.module, alias)
+            self.analyzer._import_module(alias.name, self.module_import_state)
+            self.uncertain_module_imports.difference_update(self.module_import_state[0])
             binding = (
-                self.analyzer.resolve_absolute(bound_name, self.module, alias)
+                self.analyzer.resolve_absolute(bound_name, self.module, alias, module_only=True)
                 if not alias.asname and "." in alias.name else target
             )
             aliases[bound_name] = binding
@@ -1449,11 +1787,16 @@ class RelationshipCollector(ast.NodeVisitor):
                 aliases.pop(bound_name, None)
                 self.variable_bindings.setdefault(owner, {}).pop(bound_name, None)
                 continue
-            binding = self.analyzer.resolve_absolute(
+            binding = self._module_attribute(
                 f"{base}.{alias.name}" if base else alias.name,
-                self.module,
                 alias,
             )
+            if binding.category == "module":
+                self.analyzer._import_module(binding.qualified_name, self.module_import_state)
+            original = self.analyzer.import_edges.pop(id(alias), None)
+            if original:
+                self.graph.edges.pop(original, None)
+            self.graph.add_edge("imports", self.scope, binding.node_id, self.module.relative_path, alias)
             aliases[bound_name] = binding
             if owner != self.scope and bound_name not in self.variables.get(owner, {}):
                 self._variable(bound_name, alias, scope=owner)
@@ -2933,6 +3276,13 @@ class RelationshipCollector(ast.NodeVisitor):
                 return None
         return None
 
+    def _module_attribute(self, name: str, at: ast.AST, *, unresolved: bool = True) -> Binding:
+        if name in self.uncertain_module_imports:
+            if unresolved:
+                return self.graph.add_unresolved(self.module, name, at, "conditional import may replace module attribute")
+            return Binding("", name, "unresolved")
+        return self.analyzer.resolve_absolute(name, self.module, at, _state=self.module_import_state)
+
     def resolve_expression(self, expression: ast.expr, *, unresolved: bool = True) -> Binding:
         if isinstance(expression, ast.Name):
             return self.resolve_name(expression.id, unresolved=unresolved, at=expression)
@@ -2973,7 +3323,7 @@ class RelationshipCollector(ast.NodeVisitor):
             if base.node_id:
                 target_name = f"{base.qualified_name}.{expression.attr}"
                 if base.category == "module":
-                    return self.analyzer.resolve_absolute(target_name, self.module, expression)
+                    return self._module_attribute(target_name, expression, unresolved=unresolved)
                 if base.category == "instance" and expression.attr != "__getattribute__" and self._class_member(
                     base, "__getattribute__"
                 ):
