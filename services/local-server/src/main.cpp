@@ -41,6 +41,9 @@ int main(int argc, char* argv[])
 {
     QCoreApplication application(argc, argv);
     QCoreApplication::setApplicationName("code-view-local-server");
+#ifdef CODE_VIEW_VERSION
+    QCoreApplication::setApplicationVersion(CODE_VIEW_VERSION);
+#endif
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Loopback-only Code View host");

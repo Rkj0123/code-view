@@ -7,6 +7,13 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Network HttpServer)
 
+set(CODE_VIEW_VERSION "0.1.0")
+if(EXISTS "${CMAKE_SOURCE_DIR}/../../VERSION")
+    file(READ "${CMAKE_SOURCE_DIR}/../../VERSION" CODE_VIEW_VERSION_FILE)
+    string(STRIP "${CODE_VIEW_VERSION_FILE}" CODE_VIEW_VERSION)
+endif()
+add_compile_definitions(CODE_VIEW_VERSION="${CODE_VIEW_VERSION}")
+
 add_library(code_view_local_core
     src/Config.cpp
     src/Graph.cpp

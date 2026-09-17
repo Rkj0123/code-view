@@ -73,6 +73,8 @@ CMakeLists.txt.user*
 /services/local-server/build/
 __pycache__/
 /.code-view/
+/.codebase-memory/
+/.playwright-cli/
 
 /deployment/windows/wixSetup/bin
 /deployment/windows/wixSetup/build

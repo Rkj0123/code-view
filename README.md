@@ -35,7 +35,9 @@ code-view
 
 Code View scans the current directory, starts the local host, and opens the
 tokenized localhost URL in your default browser. Press `Ctrl-C` in that same
-terminal to stop it. For a reviewable manual install, see
+terminal to stop it. It automatically checks for updates on launch and updates
+itself seamlessly with an interactive terminal UI (run `code-view --version` to
+check your version). For a reviewable manual install, see
 [Install Code View](docs/USAGE.md#2-install-code-view).
 
 ![Code View showing callers on the left, a selected Python symbol in the middle, and dependencies on the right](docs/images/01-entry-focus-light.png)
