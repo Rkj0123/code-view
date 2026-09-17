@@ -96,6 +96,16 @@ printed localhost URL in the default macOS browser, and keeps the host in this
 terminal. Press `Ctrl-C` here to stop it. Pass host options only when needed,
 for example `code-view --no-watch` or `code-view --editor code`.
 
+### Automatic updates
+
+`code-view` automatically checks for new releases on GitHub before launching. When a newer version is available, it displays an interactive Terminal UI (TUI) showing update progress, fetches the new release, rebuilds the local runtime, and immediately continues launching your repository.
+
+- Check current version: `code-view --version`
+- Force check and update: `code-view --update`
+- Skip update check for one run: `code-view --no-update`
+- Adjust update check interval (seconds, default 3600): `export CODE_VIEW_UPDATE_INTERVAL=3600`
+- Disable auto-updates entirely: `export CODE_VIEW_NO_UPDATE=1`
+
 Start the bundled smoke-test repository:
 
 ```sh
