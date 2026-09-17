@@ -48,14 +48,22 @@ export const neighborhood = (document: GraphDocument, nodeId: string, relations?
   outbound: document.edges.filter((edge) => edge.source === nodeId && (!relations || relations[edge.kind])),
 });
 
-export const inspectionNeighborhood = (document: GraphDocument, display: VisibleGraph, nodeId: string, relations: GraphFilters["relations"]) =>
-  neighborhood(
-    { ...document, edges: display.nodes.some((node) => node.id === nodeId) ? display.edges : document.edges },
-    nodeId,
-    relations,
-  );
+export const inspectionNeighborhood = (document: GraphDocument, display: VisibleGraph, nodeId: string, relations: GraphFilters["relations"]) => {
+  const node = document.nodes.find((item) => item.id === nodeId);
+  if (!node) return neighborhood({ ...document, edges: display.edges }, nodeId, relations);
+  const domain = new Set([nodeId]);
+  if (["directory", "file", "module", "package", "class"].includes(node.kind)) {
+    const byId = new Map(document.nodes.map((item) => [item.id, item]));
+    document.nodes.forEach((item) => { if (ancestorsOf(item.id, byId).includes(nodeId)) domain.add(item.id); });
+  }
+  return {
+    inbound: document.edges.filter((edge) => relations[edge.kind] && domain.has(edge.target) && !domain.has(edge.source)),
+    outbound: document.edges.filter((edge) => relations[edge.kind] && domain.has(edge.source) && (edge.kind !== "contains" || edge.source === nodeId)),
+  };
+};
 
 const entryReachable = (document: GraphDocument, allowedEdges: GraphEdge[]) => {
+  if (document.entryReachableNodeIds) return new Set(document.entryReachableNodeIds);
   const ids = new Set([document.entryKey]);
   let frontier = [document.entryKey];
   while (frontier.length) {
@@ -95,21 +103,32 @@ export const largeRepositoryOverview = (document: GraphDocument, threshold = 300
     ? new Set(document.nodes.filter((node) => node.kind === "file").map((node) => node.id))
     : new Set<string>();
 
-export const selectionFocusTarget = (document: GraphDocument, nodeId: string, collapsed: Set<string>, expansionLimit = 150) => {
+export const revealSelection = (document: GraphDocument, id: string, filters: GraphFilters, mode: ViewMode, collapsed: Set<string>) => {
   const byId = new Map(document.nodes.map((node) => [node.id, node]));
-  const boundary = ancestorsOf(nodeId, byId).find((id) => collapsed.has(id));
-  if (!boundary) return nodeId;
-  let descendants = 0;
-  for (const node of document.nodes) {
-    if (ancestorsOf(node.id, byId).includes(boundary) && ++descendants > expansionLimit) return boundary;
+  const edge = selectedEdge(document, [], id);
+  const ids = edge ? [edge.source, edge.target] : [id];
+  const nextFilters = { ...filters, nodes: { ...filters.nodes }, relations: { ...filters.relations } };
+  const nextCollapsed = new Set(collapsed);
+  const entryIds = mode === "entry" ? entryReachable(document, document.edges) : null;
+  let nextMode = mode;
+  if (edge) nextFilters.relations[edge.kind] = true;
+  for (const target of ids) {
+    const node = byId.get(target);
+    if (!node) continue;
+    if (entryIds && !entryIds.has(target)) nextMode = "repository";
+    nextFilters.nodes[node.kind] = true;
+    if (node.test) nextFilters.includeTests = true;
+    if (node.diff === "unchanged") nextFilters.changedOnly = false;
+    [target, ...ancestorsOf(target, byId)].forEach((ancestor) => nextCollapsed.delete(ancestor));
   }
-  return nodeId;
+  if (edge?.diff === "unchanged") nextFilters.changedOnly = false;
+  return { filters: nextFilters, mode: nextMode, collapsed: nextCollapsed };
 };
 
 export const selectedEdge = (document: GraphDocument, displayEdges: GraphEdge[], id?: string) =>
-  displayEdges.find((edge) => edge.id === id) ?? document.edges.find((edge) => edge.id === id);
+  displayEdges.find((edge) => edge.id === id) ?? document.edges.find((edge) => edge.id === id || `${edge.kind}|${edge.source}|${edge.target}` === id);
 
-export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters, mode: ViewMode, collapsed: Set<string>): VisibleGraph {
+export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters, mode: ViewMode, collapsed: Set<string>, selectedId?: string): VisibleGraph {
   const byId = new Map(document.nodes.map((node) => [node.id, node]));
   const allowedEdges = document.edges.filter((edge) => filters.relations[edge.kind] && (!filters.changedOnly || edge.diff !== "unchanged"));
   const entryIds = mode === "entry" && document.entryKey ? entryReachable(document, document.edges) : null;
@@ -135,9 +154,11 @@ export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters
 
   const externalGroups = new Map<string, GraphNode>();
   const externalRepresentative = new Map<string, string>();
+  const exactEdge = selectedEdge(document, [], selectedId);
+  const exactIds = new Set(exactEdge ? [exactEdge.source, exactEdge.target] : [selectedId]);
   candidateIds.forEach((id) => {
     const node = byId.get(id);
-    if (node?.kind !== "external_package") return;
+    if (node?.kind !== "external_package" || exactIds.has(id)) return;
     const packageName = node.qualifiedName.split(".", 1)[0] || node.label;
     const groupId = `group:external:${packageName}`;
     externalRepresentative.set(id, groupId);
@@ -188,7 +209,7 @@ export function buildVisibleGraph(document: GraphDocument, filters: GraphFilters
   allowedEdges.forEach((edge) => {
     const source = projectRepresentative(edge.source);
     const target = projectRepresentative(edge.target);
-    if (!source || !target || source === target) return;
+    if (!source || !target || (source === target && edge.source !== edge.target)) return;
     // Hidden compound links are already represented by the visible parent tree.
     if (edge.kind === "contains" && (!representative.has(edge.source) || !representative.has(edge.target))) return;
     const id = `${edge.kind}|${source}|${target}`;

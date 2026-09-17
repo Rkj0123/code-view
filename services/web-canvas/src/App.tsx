@@ -1,7 +1,7 @@
 import { BookOpen, Braces, Check, ChevronsLeftRight, Filter, Focus, GitCompareArrows, Image, Maximize2, Moon, PanelRight, RefreshCw, RotateCcw, Search, Share2, Sparkles, Sun } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadGitRefs, loadGraph, loadLaunchConfiguration, loadStatus, usingMockApi } from "./api";
-import { buildVisibleGraph, defaultFilters, exportDocument, filtersFromPreferences, largeRepositoryOverview, selectionFocusTarget, type VisibleGraph } from "./graphModel";
+import { buildVisibleGraph, defaultFilters, exportDocument, filtersFromPreferences, largeRepositoryOverview, revealSelection, type VisibleGraph } from "./graphModel";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { FilterSidebar } from "./components/FilterSidebar";
 import { GraphCanvas, type GraphCanvasHandle } from "./components/GraphCanvas";
@@ -154,10 +154,11 @@ export default function App() {
     storeTheme(theme);
   }, [theme]);
 
-  const visible = useMemo(() => graphDocument ? buildVisibleGraph(graphDocument, filters, mode, collapsed) : { nodes: [], edges: [] }, [collapsed, filters, graphDocument, mode]);
+  const visible = useMemo(() => graphDocument ? buildVisibleGraph(graphDocument, filters, mode, collapsed, selectedId) : { nodes: [], edges: [] }, [collapsed, filters, graphDocument, mode, selectedId]);
   const displayed = presentation ?? visible;
   const selectedNode = visible.nodes.find((node) => node.id === selectedId) ?? graphDocument?.nodes.find((node) => node.id === selectedId);
-  const canvasSelectedId = selectedId && graphDocument ? selectionFocusTarget(graphDocument, selectedId, collapsed) : undefined;
+  const canonicalEdge = graphDocument?.edges.find((edge) => edge.id === selectedId);
+  const canvasSelectedId = canonicalEdge ? `${canonicalEdge.kind}|${canonicalEdge.source}|${canonicalEdge.target}` : selectedId;
   const openTabs = openTabIds.map((id) => graphDocument?.nodes.find((node) => node.id === id)).filter((node): node is NonNullable<typeof node> => Boolean(node));
   const bookmarkNodes = bookmarks.map((id) => graphDocument?.nodes.find((node) => node.id === id)).filter((node): node is NonNullable<typeof node> => Boolean(node));
 
@@ -183,17 +184,15 @@ export default function App() {
     setSelectedId(id);
     const document = graphDocument;
     const selected = id ? document?.nodes.find((node) => node.id === id) : undefined;
-    if (selected && document) {
-      const focusId = selectionFocusTarget(document, selected.id, collapsed);
+    if (id && document) {
+      const revealed = revealSelection(document, id, filters, mode, collapsed);
+      setFilters(revealed.filters);
+      setMode(revealed.mode);
+      setCollapsed(revealed.collapsed);
+    }
+    if (selected) {
       setOpenTabIds((ids) => ids.includes(selected.id) ? ids : [...ids, selected.id].slice(-7));
-      setCollapsed((current) => {
-        const next = new Set(current);
-        const byId = new Map(document.nodes.map((node) => [node.id, node]));
-        let parent = selected.parent;
-        while (parent) { if (parent !== focusId) next.delete(parent); parent = byId.get(parent)?.parent; }
-        return next;
-      });
-      pendingFocus.current = focusId;
+      pendingFocus.current = selected.id;
     }
     if (id) { setFiltersOpen(false); setInspectorOpen(true); }
   };
@@ -237,13 +236,17 @@ export default function App() {
       { id: "theme", label: theme === "dark" ? "Use light mode" : "Use dark mode", group: "Commands", keywords: ["appearance", "color"], onSelect: () => setTheme((current) => current === "dark" ? "light" : "dark") },
       { id: "export", label: "Export visible graph as JSON", group: "Commands", onSelect: exportJson },
     ];
-    const searchableNodes = [
-      ...(graphDocument?.nodes.filter((node) => node.kind !== "external_package") ?? []),
-      ...visible.nodes.filter((node) => node.kind === "external_package"),
-    ];
-    const symbols = searchableNodes.map((node) => ({ id: `node-${node.id}`, label: node.label, group: "Symbols", hint: node.kind, keywords: [node.qualifiedName, node.kind], onSelect: () => select(node.id) }));
+    const searchableNodes = graphDocument?.nodes ?? [];
+    const counts = new Map<string, number>();
+    searchableNodes.forEach((node) => counts.set(`${node.kind}:${node.label}`, (counts.get(`${node.kind}:${node.label}`) ?? 0) + 1));
+    const symbols = searchableNodes.map((node) => ({
+      id: `node-${node.id}`, label: node.label, group: "Symbols", hint: node.kind,
+      detail: counts.get(`${node.kind}:${node.label}`)! > 1 ? `${node.qualifiedName}${node.source ? ` · ${node.source.path}:${node.source.start.line}` : ""}` : undefined,
+      keywords: [node.qualifiedName, node.kind, ...(["package", "directory"].includes(node.kind) ? ["folder"] : [])],
+      onSelect: () => select(node.id),
+    }));
     return [...actions, ...symbols];
-  }, [filters.includeTests, graphDocument, theme, visible]);
+  }, [filters, graphDocument, theme, visible, mode, collapsed]);
 
   if (!graphDocument && !error) return <main className="boot-screen"><div className="boot-mark"><Share2 size={24} /></div><p>Indexing repository graph…</p></main>;
   if (!graphDocument) return <main className="boot-screen boot-screen--error"><p>{error}</p><button className="button button--primary" onClick={() => void refresh()}>Try again</button></main>;

@@ -36,7 +36,7 @@ struct LocalConfig
     QString startMode = "document";
     QStringList excludePatterns;
     QString modules = "hide";
-    QString initialView = "entry-focus";
+    QString initialView = "whole-repo";
     QStringList relationships = {"contains", "imports", "calls", "inherits", "constructs", "reads", "writes",
                                  "decorates", "type_uses", "api_calls"};
     QString gitBase = "HEAD";

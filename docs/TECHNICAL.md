@@ -97,7 +97,7 @@ hints.
 `index.tests` is `exclude` or `include`; `index.modules` is `hide` or `show`;
 `externalPackages` is currently `collapse`; `index.exclude` is a list of
 repository-relative glob patterns. `canvas.initialView` is `entry-focus` or
-`whole-repo`. Relationship configuration accepts an enabled-name array or a
+`whole-repo` (default). Relationship configuration accepts an enabled-name array or a
 boolean object. `git.base` selects the default comparison ref.
 
 Unknown keys, invalid enum values, unsafe paths, and explicit null values where
@@ -170,6 +170,13 @@ guard. It records `entryNodeId` and `entryReachableNodeIds` in the project
 metadata. The host's `entry` graph view includes reachable nodes, containment
 ancestors, and edges whose endpoints are selected.
 
+Reachability follows non-containment relationships, source-owner modules and
+parent package initializers. From-import contexts retain the declared importing
+module even when an export resolves to a definition in another file. Containment
+ancestors are added for context, not traversed downward as execution. The web
+adapter carries these authoritative IDs instead of recomputing live entry scope.
+This is static dependency reachability, not proof that every conditional runs.
+
 ## 9. Indexing and generation lifecycle
 
 1. Configuration and repository paths are validated.
@@ -198,6 +205,13 @@ File/class headers are visual ownership boundaries. Function-local rows are
 flat and owner-qualified. Edges terminate at leaf symbol rows, not at compound
 containers, and Cytoscape's preset layout plus taxi routing is motion-free and
 deterministic. Dense views remain pannable and zoomable.
+
+Selection reveals the exact canonical node or relationship endpoints across
+kind filters, entry scope and collapsed ancestors. File labels use relative paths;
+module labels use qualified names. Container inspection includes contained code's
+relationships, with owner/member navigation. Directory/package nodes have no source
+range and never trigger source-file reads. External symbols remain grouped in the
+overview but an explicitly selected external endpoint retains its exact identity.
 
 The browser preserves canonical IDs and locations in selection, Inspector,
 Trace, and JSON export. An occurrence request is guarded by the current

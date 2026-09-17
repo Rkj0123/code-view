@@ -121,6 +121,7 @@ class Graph:
         self.edges: dict[str, dict[str, Any]] = {}
         self.diagnostics: list[dict[str, Any]] = []
         self.entry_node_id: str | None = None
+        self.import_contexts: dict[str, set[str]] = {}
 
     def add_node(
         self,
@@ -233,6 +234,9 @@ class Graph:
             return []
         outgoing: dict[str, list[str]] = {}
         parents: dict[str, str] = {}
+        modules = {node["path"]: node["id"] for node in self.nodes.values() if node["kind"] == "module"}
+        for owner, contexts in self.import_contexts.items():
+            outgoing.setdefault(owner, []).extend(contexts)
         for edge in self.edges.values():
             if edge["kind"] == "contains":
                 parents[edge["target"]] = edge["source"]
@@ -242,7 +246,14 @@ class Graph:
         pending = [self.entry_node_id]
         while pending:
             current = pending.pop()
-            for target in outgoing.get(current, []):
+            targets = list(outgoing.get(current, []))
+            path = self.nodes[current]["path"]
+            if path:
+                # Importing a value still executes its module and package initializers.
+                for source_path in [path, *(str(parent / "__init__.py") for parent in Path(path).parents if parent.parts)]:
+                    if source_path in modules:
+                        targets.append(modules[source_path])
+            for target in targets:
                 if target not in seen:
                     seen.add(target)
                     pending.append(target)
@@ -881,6 +892,9 @@ class Analyzer:
                         self.graph.add_edge("imports", owner, import_target.node_id, module.relative_path, alias)
                 else:
                     base = self._absolute_from(module, node.module, node.level)
+                    if base in self.modules and base not in self.module_collisions:
+                        # Keep the importing package even when its export resolves elsewhere.
+                        self.graph.import_contexts.setdefault(owner, set()).add(self.modules[base].node_id)
                     for alias in node.names:
                         if alias.name == "*":
                             binding = self.graph.add_unresolved(module, f"{base}.*", alias, "wildcard import")

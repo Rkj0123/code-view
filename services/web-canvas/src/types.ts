@@ -84,6 +84,7 @@ export interface GraphDocument {
   revision: number;
   generatedAt: string;
   entryKey: string;
+  entryReachableNodeIds?: string[];
   preferences: CanvasPreferences;
   nodes: GraphNode[];
   edges: GraphEdge[];

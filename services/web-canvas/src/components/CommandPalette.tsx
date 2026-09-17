@@ -7,6 +7,7 @@ export interface CommandItem {
   label: string;
   group: string;
   hint?: string;
+  detail?: string;
   keywords?: string[];
   onSelect: () => void;
 }
@@ -111,8 +112,8 @@ export function CommandPalette({ open, onOpenChange, items }: CommandPaletteProp
               {entries.map((item) => {
                 const index = filtered.indexOf(item);
                 return (
-                  <button key={item.id} type="button" role="option" aria-selected={index === active} data-command-index={index} onPointerMove={() => setActive(index)} onClick={() => { item.onSelect(); close(); }}>
-                    <span>{item.label}</span>{item.hint && <kbd>{item.hint}</kbd>}
+                  <button key={item.id} type="button" role="option" title={item.detail} aria-selected={index === active} data-command-index={index} onPointerMove={() => setActive(index)} onClick={() => { item.onSelect(); close(); }}>
+                    <span>{item.label}{item.detail && <small>{item.detail}</small>}</span>{item.hint && <kbd>{item.hint}</kbd>}
                   </button>
                 );
               })}

@@ -1,12 +1,40 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildVisibleGraph, defaultFilters, filtersFromPreferences, largeRepositoryOverview, neighborhood, selectedEdge } from "../src/graphModel";
+import { buildVisibleGraph, defaultFilters, filtersFromPreferences, inspectionNeighborhood, largeRepositoryOverview, neighborhood, revealSelection, selectedEdge } from "../src/graphModel";
+import { normalizeGraphPayload } from "../src/apiContract";
+import { analyzerFixture } from "./fixtures";
 import { mockGraph } from "../src/mockData";
 import { bootstrapCapabilityToken } from "../src/auth";
 import { normalizeIndexStatus, normalizeLaunchConfiguration } from "../src/api";
 import { nodeKinds, relationKinds, type GraphDocument, type GraphNode } from "../src/types";
 
 describe("web canvas product contract eval", () => {
+  it("traces package initialization and reveals every indexed entity from a filtered entry view", () => {
+    const { graph } = analyzerFixture("navigation");
+    const document = normalizeGraphPayload({ generation: 1, projectName: "navigation", graph });
+    const filters = defaultFilters();
+    const entry = buildVisibleGraph(document, filters, "entry", new Set());
+    expect(entry.nodes.map((node) => node.label)).toContain("api/routes/search.py");
+    expect(entry.nodes.map((node) => node.label)).not.toContain("independent.py");
+    const container = document.nodes.find((node) => node.label === "api/__init__.py")!;
+    expect(inspectionNeighborhood(document, entry, container.id, filters.relations).outbound.filter((edge) => edge.kind === "imports")).toHaveLength(2);
+    const exercised = new Set<string>();
+    for (const node of document.nodes) {
+      const hidden = defaultFilters();
+      hidden.nodes[node.kind] = false;
+      hidden.changedOnly = true;
+      const revealed = revealSelection(document, node.id, hidden, "entry", largeRepositoryOverview(document, 0));
+      const visible = buildVisibleGraph(document, revealed.filters, revealed.mode, revealed.collapsed, node.id);
+      expect(visible.nodes.map((item) => item.id), node.qualifiedName).toContain(node.id);
+      exercised.add(node.kind);
+    }
+    expect([...exercised]).toEqual(expect.arrayContaining(["directory", "package", "file", "module", "class", "method", "function", "variable"]));
+    const recursive = document.edges.find((edge) => edge.kind === "calls" && edge.source === edge.target)!;
+    expect(recursive).toBeDefined();
+    const revealed = revealSelection(document, recursive.id, filters, "entry", new Set());
+    expect(buildVisibleGraph(document, revealed.filters, revealed.mode, revealed.collapsed, recursive.id).edges)
+      .toContainEqual(expect.objectContaining({ source: recursive.source, target: recursive.target, kind: "calls" }));
+  });
   it("keeps every canonical relationship selectable and only test coverage off", () => {
     const filters = defaultFilters();
     expect(relationKinds).toEqual(["contains", "imports", "calls", "inherits", "constructs", "reads", "writes", "decorates", "type_uses", "api_calls", "test_covers"]);

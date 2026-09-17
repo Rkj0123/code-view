@@ -37,6 +37,23 @@ def adversarial_metrics():
     rows = {}
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
+        (root / "api/routes").mkdir(parents=True)
+        (root / "main.py").write_text("from api import app\n")
+        (root / "__init__.py").write_text("import root_only\n")
+        (root / "api/__init__.py").write_text("from .factory import app\nfrom .routes.search import router\n")
+        (root / "api/factory.py").write_text("app = object()\n")
+        (root / "api/routes/__init__.py").write_text("import config\n")
+        (root / "api/routes/search.py").write_text("router = object()\n")
+        (root / "config.py").write_text("ready = True\n")
+        (root / "independent.py").write_text("unused = 1\n")
+        (root / "root_only.py").write_text("unused = 2\n")
+        graph = analyze_repository(root)
+        reached = {node["qualifiedName"] for node in graph["nodes"] if node["id"] in graph["project"]["entryReachableNodeIds"]}
+        rows["importedReexportInitializesPackageAndRoutes"] = {"api", "api.factory", "api.routes", "api.routes.search", "config"} <= reached
+        rows["initializationDoesNotReachIndependentFiles"] = "independent" not in reached
+        rows["repositoryRootIsNotAPackageInitializer"] = "__root__" not in reached and "root_only" not in reached
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
         (root / "main.py").write_text(
             "def target():\n    pass\n\ndef run(target):\n    target()\n"
             "class C:\n    def helper(self):\n        pass\n    def run(self):\n        helper()\n"

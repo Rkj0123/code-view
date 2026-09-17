@@ -337,6 +337,11 @@ void configAndPathTests()
 {
     QTemporaryDir temp;
     writeFile(temp.filePath("main.py"), "print('ok')\n");
+    check(LocalConfig::load(temp.path()).initialView == "whole-repo", "new repositories must open the whole repository");
+    writeFile(temp.filePath("code-view.json"), R"({"canvas":{}})");
+    check(LocalConfig::load(temp.path()).initialView == "whole-repo", "empty canvas config must preserve repository default");
+    writeFile(temp.filePath("code-view.json"), R"({"canvas":{"initialView":"entry-focus"}})");
+    check(LocalConfig::load(temp.path()).initialView == "entry-focus", "explicit entry preference must be honored");
     writeFile(temp.filePath("code-view.json"), R"({"schemaVersion":1,"entry":{"file":"main.py","symbol":"main","command":{"argv":["python3","main.py"],"mode":"manual"}},"languages":["python"],"index":{"tests":"include","modules":"show","externalPackages":"collapse","exclude":["generated/**"]},"canvas":{"initialView":"whole-repo","relationships":{"calls":true}},"git":{"base":"HEAD"}})");
     const LocalConfig config = LocalConfig::load(temp.path());
     check(config.startManual && config.startArgv == QStringList({"python3", "main.py"}), "manual argv not normalized");
