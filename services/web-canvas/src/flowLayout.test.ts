@@ -68,4 +68,10 @@ describe("readable file rows and selected flow", () => {
     expect(buildFlowScene(graph, "missing", "selection").scope).toBe("all");
     expect(buildFlowScene({ nodes: [], edges: [] }).elements).toEqual([]);
   });
+  it("gives relative file paths readable row widths", () => {
+    const file = { ...graph.nodes.find((node) => node.kind === "file")!, label: "api/routes/availability.py" };
+    const scene = buildFlowScene({ nodes: [file], edges: [] });
+    const row = scene.elements.find((item) => item.data.originalId === file.id)!;
+    expect(row.data.labelWidth).toBeGreaterThan(file.label.length * 7.8);
+  });
 });

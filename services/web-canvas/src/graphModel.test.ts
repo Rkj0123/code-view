@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mockGraph } from "./mockData";
-import { buildVisibleGraph, defaultFilters, filtersFromPreferences, inspectionNeighborhood, largeRepositoryOverview, neighborhood, searchNodes, selectedEdge, selectionFocusTarget } from "./graphModel";
+import { buildVisibleGraph, defaultFilters, filtersFromPreferences, inspectionNeighborhood, largeRepositoryOverview, neighborhood, revealSelection, searchNodes, selectedEdge } from "./graphModel";
 import type { GraphNode, GraphEdge } from "./types";
 
 describe("graph model", () => {
@@ -193,7 +193,7 @@ describe("graph model", () => {
     expect(selectedEdge(document, visible.edges, aggregate.id)).toEqual(aggregate);
     const flow = neighborhood({ ...document, edges: visible.edges }, "file:src/game.py");
     expect(flow.inbound.length + flow.outbound.length).toBeGreaterThan(0);
-    expect(inspectionNeighborhood(document, visible, "file:src/game.py", defaultFilters().relations)).toEqual(flow);
+    expect(inspectionNeighborhood(document, visible, "file:src/game.py", defaultFilters().relations).inbound.map((edge) => edge.id)).toContain("second-construct");
     expect(inspectionNeighborhood(document, visible, "py:method:src.game.Game.__init__", defaultFilters().relations)).toEqual(
       neighborhood(document, "py:method:src.game.Game.__init__", defaultFilters().relations),
     );
@@ -227,8 +227,46 @@ describe("graph model", () => {
     const collapsed = largeRepositoryOverview(document);
     expect(collapsed).toContain("file:src/game.py");
     expect(buildVisibleGraph(document, defaultFilters(), "repository", collapsed).nodes.some((node) => node.id.startsWith("large:"))).toBe(false);
-    expect(selectionFocusTarget(document, "large:1", collapsed)).toBe("file:src/game.py");
-    expect(selectionFocusTarget(mockGraph, "py:method:src.game.Game.play", new Set(["file:src/game.py"]))).toBe("py:method:src.game.Game.play");
+    const revealed = revealSelection(document, "large:1", defaultFilters(), "repository", collapsed);
+    expect(buildVisibleGraph(document, revealed.filters, revealed.mode, revealed.collapsed).nodes.map((node) => node.id)).toContain("large:1");
+    expect(collapsed).toContain("file:src/game.py");
+  });
+
+  it("uses authoritative entry IDs and reveals hidden selections without changing graph facts", () => {
+    const document = { ...mockGraph, entryReachableNodeIds: [mockGraph.entryKey] };
+    const filters = defaultFilters();
+    filters.nodes.module = false;
+    filters.changedOnly = true;
+    const id = "py:module:src.game";
+    const revealed = revealSelection(document, id, filters, "entry", new Set(["file:src/game.py"]));
+    expect(revealed.mode).toBe("repository");
+    expect(revealed.filters.nodes.module).toBe(true);
+    expect(buildVisibleGraph(document, revealed.filters, revealed.mode, revealed.collapsed).nodes.map((node) => node.id)).toContain(id);
+    expect(buildVisibleGraph(document, defaultFilters(), "entry", new Set()).nodes.map((node) => node.id)).not.toContain("py:method:src.game.Game.play");
+    expect(filters.nodes.module).toBe(false);
+  });
+
+  it("reveals canonical relationship endpoints including exact external symbols", () => {
+    const edge = mockGraph.edges.find((item) => item.kind === "api_calls")!;
+    const filters = defaultFilters();
+    filters.relations.api_calls = false;
+    filters.nodes.external_package = false;
+    const revealed = revealSelection(mockGraph, edge.id, filters, "repository", largeRepositoryOverview(mockGraph, 0));
+    const visible = buildVisibleGraph(mockGraph, revealed.filters, revealed.mode, revealed.collapsed, edge.id);
+    expect(visible.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([edge.source, edge.target]));
+    expect(visible.edges).toContainEqual(expect.objectContaining({ source: edge.source, target: edge.target, locations: edge.locations }));
+    const rendered = visible.edges.find((item) => item.source === edge.source && item.target === edge.target)!;
+    const again = revealSelection(mockGraph, rendered.id, revealed.filters, revealed.mode, revealed.collapsed);
+    const reselected = buildVisibleGraph(mockGraph, again.filters, again.mode, again.collapsed, rendered.id);
+    expect(reselected.nodes.map((node) => node.id)).toContain(edge.target);
+    expect(reselected.edges.find((item) => item.id === rendered.id)).toEqual(rendered);
+  });
+  it("preserves real recursive calls while suppressing collapse-induced self-links", () => {
+    const node = mockGraph.nodes.find((item) => item.kind === "function")!;
+    const edge = { ...mockGraph.edges.find((item) => item.kind === "calls")!, id: "recursive-call", source: node.id, target: node.id };
+    const document = { ...mockGraph, edges: [edge] };
+    const visible = buildVisibleGraph(document, defaultFilters(), "repository", new Set());
+    expect(visible.edges).toMatchObject([{ source: node.id, target: node.id, locations: edge.locations }]);
   });
 
   it("collapses known external symbols at their package boundary", () => {

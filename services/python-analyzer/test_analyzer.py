@@ -48,6 +48,31 @@ def analyze_files(files):
     return temporary, root, analyze_repository(root)
 
 
+class EntryInitializationTest(unittest.TestCase):
+    def test_imported_values_and_reexports_include_initializers_not_disconnected_code(self):
+        temporary, _, graph = analyze_files({
+            "main.py": "from api import app\n",
+            "__init__.py": "import root_only\n",
+            "api/__init__.py": "from .factory import app\nfrom .routes.search import router\n",
+            "api/factory.py": "app = object()\n",
+            "api/routes/__init__.py": "import config\n",
+            "api/routes/search.py": "from service import result\nrouter = object()\n",
+            "config.py": "ready = True\n",
+            "service.py": "from api import app\nresult = 42\ndef unused():\n    import disconnected\n",
+            "disconnected.py": "value = 1\n",
+            "root_only.py": "value = 2\n",
+        })
+        with temporary:
+            reachable = {node["qualifiedName"] for node in graph["nodes"] if node["id"] in graph["project"]["entryReachableNodeIds"]}
+            self.assertTrue({"main", "api", "api.factory", "api.routes", "api.routes.search", "service", "config"} <= reachable)
+            self.assertIn("main -> api.factory.$local.app", relationship_set(graph, "imports"))
+            self.assertNotIn("disconnected", reachable)
+            self.assertNotIn("__root__", reachable)
+            self.assertNotIn("root_only", reachable)
+            self.assertNotIn("service.unused", reachable)
+            validate_graph_document(graph)
+
+
 class GoldenFixtureTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

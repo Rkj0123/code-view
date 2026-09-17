@@ -18,6 +18,7 @@ const rowHeight = 28;
 const rowGap = 8;
 const padding = 12;
 const rowWidth = 164;
+const labelWidth = (label: string) => Math.max(rowWidth, Math.min(420, label.length * 8 + 24));
 const compare = (a: GraphNode, b: GraphNode) =>
   (a.source?.start.line ?? 0) - (b.source?.start.line ?? 0) || a.qualifiedName.localeCompare(b.qualifiedName) || a.id.localeCompare(b.id);
 
@@ -94,9 +95,10 @@ export function buildFlowScene(graph: VisibleGraph, selectedId?: string, request
     const cached = dimensions.get(id);
     if (cached) return cached;
     const sizes = (rows.get(id) ?? []).map((node) => measure(node.id));
-    const size = compact.has(id) ? { width: 176, height: 56 } : sizes.length
-      ? { width: Math.max(rowWidth, ...sizes.map((item) => item.width)) + 2 * padding, height: rowHeight + rowGap + sizes.reduce((sum, item) => sum + item.height + rowGap, 0) - rowGap + 2 * padding }
-      : { width: rowWidth, height: rowHeight };
+    const width = Math.max(labelWidth(display.get(id)!.label), ...sizes.map((item) => item.width));
+    const size = compact.has(id) ? { width: width + 12, height: 56 } : sizes.length
+      ? { width: width + 2 * padding, height: rowHeight + rowGap + sizes.reduce((sum, item) => sum + item.height + rowGap, 0) - rowGap + 2 * padding }
+      : { width, height: rowHeight };
     dimensions.set(id, size);
     return size;
   };
@@ -109,10 +111,10 @@ export function buildFlowScene(graph: VisibleGraph, selectedId?: string, request
     const items = rows.get(id) ?? [];
     if (compact.has(id)) {
       // Keep the file header above the symbol so connectors cannot cross its label.
-      positions.set(id, { x: x + 88, y: y + 12 });
-      widths.set(id, 164);
-      positions.set(items[0].id, { x: x + 88, y: y + 40 });
-      widths.set(items[0].id, 164);
+      positions.set(id, { x: x + size.width / 2, y: y + 12 });
+      widths.set(id, size.width - 12);
+      positions.set(items[0].id, { x: x + size.width / 2, y: y + 40 });
+      widths.set(items[0].id, size.width - 12);
       return;
     }
     positions.set(id, { x: x + size.width / 2, y: y + (items.length ? padding : 0) + rowHeight / 2 });

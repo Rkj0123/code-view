@@ -27,7 +27,7 @@ function FlowList({ edges, direction, nodes, onOpenNode }: { edges: GraphEdge[];
       {edges.length === 0 ? <small>None</small> : edges.map((edge) => {
         const otherId = direction === "inbound" ? edge.source : edge.target;
         const other = nodes.find((node) => node.id === otherId);
-        return <button key={edge.id} onClick={() => onOpenNode(edge.id)} title={`Inspect ${relationLabel(edge.kind)} relationship with ${other?.qualifiedName ?? otherId}`}><span>{other?.label ?? otherId}</span><em>{relationLabel(edge.kind)}</em></button>;
+        return <button key={edge.id} onClick={() => onOpenNode(edge.id)} title={`Inspect ${relationLabel(edge.kind)} relationship with ${other?.qualifiedName ?? otherId}`}><span>{other?.label ?? otherId}</span><em>{relationLabel(edge.kind)}</em>{other?.source && <small className="flow-path">{other.source.path}</small>}</button>;
       })}
     </div>
   );
@@ -138,6 +138,8 @@ export function Inspector({ document, selectedId, bookmarked, onToggleBookmark, 
   if (!node) return null;
 
   const flow = inspectionNeighborhood(document, { nodes: displayNodes, edges: displayEdges }, node.id, relations);
+  const members = document.nodes.filter((item) => item.parent === node.id);
+  const owner = document.nodes.find((item) => item.id === node.parent);
   const sourceContent = sourceEvidence === undefined ? <div className="panel-empty">Loading exact source…</div> : sourceEvidence ? (
     <div className="source-view"><div className="source-view__path"><FileCode2 size={13} /><span>{locationText(sourceEvidence.range)}</span></div><pre><code>{sourceEvidence.text}</code></pre></div>
   ) : <div className="panel-empty">Source preview is unavailable for this symbol.</div>;
@@ -153,6 +155,7 @@ export function Inspector({ document, selectedId, bookmarked, onToggleBookmark, 
           <button className="icon-button" onClick={() => onToggleBookmark(node.id)} aria-label={bookmarked ? `Remove ${node.label} bookmark` : `Bookmark ${node.label}`}>{bookmarked ? <BookmarkCheck size={17} /> : <Bookmark size={17} />}</button>
         </div>
         <p className="qualified-name">{node.qualifiedName}</p>
+        {owner && <div className="occurrence-row"><button onClick={() => onOpenNode(owner.id)} title={owner.qualifiedName}><span>In {owner.label}</span><small>{owner.kind}</small></button></div>}
         <div className="status-line"><span data-resolution={node.resolution}>{node.resolution}</span><span data-diff={node.diff}>{node.diff}</span>{node.entry && <span className="entry-chip">entry</span>}</div>
         {node.signature && <code className="signature">{node.signature}</code>}
         {node.summary && <p className="symbol-summary">{node.summary}</p>}
@@ -163,6 +166,11 @@ export function Inspector({ document, selectedId, bookmarked, onToggleBookmark, 
           <FlowList edges={flow.inbound} direction="inbound" nodes={allNodes} onOpenNode={onOpenNode} />
           <FlowList edges={flow.outbound} direction="outbound" nodes={allNodes} onOpenNode={onOpenNode} />
         </div>
+
+        {members.length > 0 && <details className="occurrences members" key={node.id}>
+          <summary>Members ({members.length})</summary>
+          <section aria-label="Contained members">{members.map((member) => <div className="occurrence-row" key={member.id}><button onClick={() => onOpenNode(member.id)} title={member.qualifiedName}><span>{member.label}</span><small>{member.kind}</small></button></div>)}</section>
+        </details>}
 
         {node.resolution === "resolved" && sourceEvidence && <div className="source-actions">
           <button className="button button--primary" onClick={() => void openInEditor(sourceEvidence.range).then((result) => setActionMessage(result.message))}><ExternalLink size={13} />Open in Editor</button>

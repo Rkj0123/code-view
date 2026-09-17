@@ -288,7 +288,7 @@ LocalConfig LocalConfig::load(const QString& root)
     else if (object.contains("index"))
         throw error("index must be an object");
 
-    QString initialView = "entry-focus";
+    QString initialView = "whole-repo";
     const QStringList relationshipKinds = {"contains", "imports", "calls", "inherits", "constructs", "reads", "writes",
                                            "decorates", "type_uses", "api_calls", "test_covers"};
     QStringList enabledRelationships = relationshipKinds.mid(0, relationshipKinds.size() - 1);
@@ -298,7 +298,7 @@ LocalConfig LocalConfig::load(const QString& root)
             throw error("canvas must be an object");
         const QJsonObject canvas = object.value("canvas").toObject();
         rejectUnknown(canvas, {"initialView", "relationships"}, "canvas");
-        initialView = canvas.contains("initialView") ? canvas.value("initialView").toString() : "entry-focus";
+        initialView = canvas.contains("initialView") ? canvas.value("initialView").toString() : "whole-repo";
         if (initialView != "entry-focus" && initialView != "whole-repo")
             throw error("canvas.initialView must be entry-focus or whole-repo");
         const QSet<QString> relationships(relationshipKinds.begin(), relationshipKinds.end());

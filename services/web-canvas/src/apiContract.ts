@@ -101,8 +101,9 @@ export function normalizeGraphPayload(value: unknown): GraphDocument {
     revision: payload.generation,
     generatedAt: payload.generatedAt ?? "",
     entryKey: graph.project.entryNodeId ?? "",
+    entryReachableNodeIds: graph.project.entryReachableNodeIds,
     preferences: {
-      initialView: payload.config?.initialView === "whole-repo" ? "repository" : "entry",
+      initialView: payload.config?.initialView === "entry-focus" ? "entry" : "repository",
       showModules: payload.config?.modules === "show",
       includeTests: payload.config?.includeTests === true,
       relationships: configuredRelationships,
@@ -118,7 +119,7 @@ export function normalizeGraphPayload(value: unknown): GraphDocument {
       return {
         id: node.id,
         kind: nodeKind(node.kind),
-        label: node.name,
+        label: node.kind === "module" ? node.qualifiedName : ["file", "package"].includes(node.kind) ? node.path ?? node.name : node.name,
         qualifiedName: node.qualifiedName,
         parent: parentByChild.get(node.id) ?? (node.unresolved && node.path ? fileByPath.get(node.path) : undefined),
         resolution: resolution(node, node.kind),
@@ -126,7 +127,7 @@ export function normalizeGraphPayload(value: unknown): GraphDocument {
         stale: modifiers.has("stale") || undefined,
         entry: node.id === graph.project.entryNodeId || modifiers.has("entry") || undefined,
         diff: nodeDiff.get(node.id) ?? "unchanged",
-        source: node.path ? {
+        source: node.path && !["repository", "package"].includes(node.kind) ? {
           path: node.path,
           start: sourceStart,
           end: sourceEnd,

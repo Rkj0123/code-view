@@ -161,6 +161,7 @@ button.workspace-tab { padding: 0 14px; }
 .flow-group > button:hover { color: var(--text); }
 .flow-group > button span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .flow-group > button em { color: var(--faint); font: 8px ui-monospace, "SFMono-Regular", Menlo, monospace; font-style: normal; }
+.flow-path { font: 9px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace; overflow-wrap: anywhere; }
 .flow-group > small { color: var(--faint); font-size: 9px; }
 .tabs { margin-top: 14px; }
 .tabs__list { position: relative; display: flex; border-bottom: 1px solid var(--line); }
@@ -186,6 +187,8 @@ pre { margin: 0; overflow: auto; }
 .boundary-reason strong { color: #c9868d; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
 .boundary-reason span { color: #b7a1a4; font-size: 10px; line-height: 1.45; }
 .occurrences { margin-top: 16px; }
+.members > summary { cursor: pointer; font-size: 11px; }
+.members > section { max-height: 190px; overflow: auto; }
 .occurrence-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
 .occurrence-row > button:first-child { display: flex; min-width: 0; height: 31px; flex: 1; align-items: center; gap: 7px; padding: 0 4px; overflow: hidden; color: #9ab7c2; background: transparent; cursor: pointer; text-align: left; }
 .occurrence-row > button:first-child span { overflow: hidden; font: 9px ui-monospace, "SFMono-Regular", Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
@@ -207,7 +210,9 @@ pre { margin: 0; overflow: auto; }
 .palette__search kbd { padding: 3px 5px; border: 1px solid var(--line); }
 .palette__results { overflow: auto; padding: 6px; }
 .palette__group > p { margin: 8px 8px 4px; color: var(--faint); font-size: 9px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.palette__group button { display: flex; width: 100%; height: 35px; align-items: center; justify-content: space-between; padding: 0 9px; color: #aeb8bd; background: transparent; cursor: pointer; text-align: left; }
+.palette__group button { display: flex; width: 100%; min-height: 35px; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 9px; color: #aeb8bd; background: transparent; cursor: pointer; text-align: left; }
+.palette__group button small { display: block; margin-top: 3px; font: 10px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace; overflow-wrap: anywhere; }
+.palette__group button > span { min-width: 0; }
 .palette__group button[aria-selected="true"] { color: var(--text); background: #1a242b; }
 .palette__footer { display: flex; align-items: center; gap: 14px; padding: 0 12px; color: var(--faint); border-top: 1px solid var(--line); font-size: 9px; }
 .empty-message { padding: 28px; color: var(--muted); font-size: 11px; text-align: center; }

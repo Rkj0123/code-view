@@ -34,6 +34,8 @@ describe("normalizeGraphPayload", () => {
   it("maps a real analyzer document once at the host boundary", () => {
     const normalized = normalizeGraphPayload(envelope);
     expect(normalized.entryKey).toBe("n_222222222222222222222222");
+    expect(normalized.entryReachableNodeIds).toEqual(graph.project.entryReachableNodeIds);
+    expect(normalized.preferences.initialView).toBe("repository");
     expect(normalized.nodes.find((node) => node.label === "main")).toMatchObject({ parent: "n_111111111111111111111111", stale: true, entry: true, diff: "modified", summary: "Entry point", source: { path: "main.py" } });
     expect(normalized.nodes.find((node) => node.label === "requests")).toMatchObject({ kind: "external_package", resolution: "external", boundaryReason: "dependency boundary" });
     expect(normalized.edges.find((edge) => edge.kind === "api_calls")).toMatchObject({ resolution: "external", diff: "added", locations: [{ path: "main.py" }], boundaryReason: "target outside repository" });
@@ -41,6 +43,19 @@ describe("normalizeGraphPayload", () => {
 
   it("rejects schema versions the client cannot interpret", () => {
     expect(() => normalizeGraphPayload({ ...envelope, graph: { ...graph, schemaVersion: "code-view.graph/v2" } })).toThrow("Unsupported graph schemaVersion: code-view.graph/v2");
+  });
+
+  it("distinguishes package, module and file labels without requesting directory source", () => {
+    const nodes = [
+      { ...graph.nodes[0], id: "folder", kind: "package", name: "api", qualifiedName: "src.api", path: "src/api" },
+      { ...graph.nodes[0], id: "file", name: "__init__.py", path: "src/api/__init__.py" },
+      { ...graph.nodes[0], id: "module", kind: "module", name: "__init__.py", qualifiedName: "src.api", path: "src/api/__init__.py" },
+    ];
+    const normalized = normalizeGraphPayload({ ...envelope, graph: { ...graph, nodes }, config: { initialView: "entry-focus" } });
+    expect(normalized.preferences.initialView).toBe("entry");
+    expect(normalized.nodes.map((node) => node.label)).toEqual(["src/api", "src/api/__init__.py", "src.api"]);
+    expect(normalized.nodes[0].source).toBeUndefined();
+    expect(normalized.nodes[2].source?.path).toBe("src/api/__init__.py");
   });
 
   it("carries code-view canvas choices across the host boundary", () => {

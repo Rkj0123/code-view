@@ -200,7 +200,7 @@ Rules that matter most:
 - `index.modules: "show"` reveals module and package boundaries. Omitted or
   `"hide"` keeps those derived groups hidden.
 - `externalPackages` currently accepts only `"collapse"`.
-- `canvas.initialView` is `"entry-focus"` or `"whole-repo"`.
+- `canvas.initialView` is `"entry-focus"` or `"whole-repo"` (default).
 - `canvas.relationships` accepts either a list of names or a boolean object.
 - Omit `test_covers` to keep test coverage off. The UI can enable it later.
 - `index.exclude` contains repository-relative glob patterns.
@@ -214,7 +214,22 @@ Rules that matter most:
 - `Repository` contains every indexed node and relationship allowed by the
   current filters.
 - `Entry Focus` contains the complete statically reachable flow from the entry,
-  plus the containment ancestors needed to understand it.
+  including imported-module and package initialization, plus containment ancestors.
+  Importing a variable or a re-export still includes its module's initialization.
+
+Repository is the default unless `canvas.initialView` explicitly selects Entry Focus.
+Search covers every indexed folder/package, file, module, class, function, method
+and variable. Selecting a result reveals that exact entity, expands its collapsed
+ancestors and enables its node kind. A result outside Entry Focus switches to
+Repository; test or changed-only filters are relaxed when they hide the selection.
+The same rules apply to tabs, bookmarks and Inspector links. Configured indexing
+exclusions still apply: search cannot reveal code that was not indexed.
+
+File nodes use repository-relative paths, and modules use qualified names.
+The Inspector's owner and Members links navigate the hierarchy. Container
+relationships include recorded dependencies of contained code, even when a module
+header is hidden. Selecting a relationship reveals its exact endpoints and source
+occurrences. Folder selection lists members without fetching a directory as source.
 
 Inside either view, use the presentation switch:
 
@@ -228,7 +243,7 @@ export reports the currently displayed scope.
 
 ### Canvas terms
 
-- **Node**: a file, class, function, method, variable, external package, or
+- **Node**: a folder/package, module, file, class, function, method, variable, external package, or
   unresolved target.
 - **Relationship**: a directed `contains`, `imports`, `calls`, `inherits`,
   `constructs`, `reads`, `writes`, `decorates`, `type_uses`, `api_calls`, or

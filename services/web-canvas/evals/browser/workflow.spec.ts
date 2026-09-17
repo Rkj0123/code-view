@@ -4,7 +4,7 @@ import { analyzerFixture } from "../fixtures";
 import { normalizeGraphPayload } from "../../src/apiContract";
 import { buildVisibleGraph, defaultFilters } from "../../src/graphModel";
 
-async function mockLiveHost(page: Page, tenFiles = false) {
+async function mockLiveHost(page: Page, tenFiles: boolean | "navigation" = false) {
   const { graph, sourceByPath } = analyzerFixture(tenFiles);
   const state = { generation: 7, state: "ready", lastError: null as string | null, command: "a.py", running: false, approved: 0, approvals: [] as number[], starts: 0 };
   const launch = () => ({ generation: state.generation, display: `python ${state.command}`, argv: ["python", state.command], cwd: "/repo", mode: "manual", allowLaunch: !state.lastError && state.state === "ready", running: state.running });
@@ -12,7 +12,7 @@ async function mockLiveHost(page: Page, tenFiles = false) {
     const path = new URL(route.request().url()).pathname;
     let body: unknown;
     let status = 200;
-    if (path === "/api/v1/graph") body = { generation: state.generation, projectName: "live-fixture", config: { initialView: "whole-repo" }, comparison: null, graph };
+    if (path === "/api/v1/graph") body = { generation: state.generation, projectName: "live-fixture", config: {}, comparison: null, graph };
     else if (path === "/api/v1/status") body = { generation: state.generation, state: state.state, lastError: state.lastError };
     else if (path === "/api/v1/git/refs") body = { hasHead: false, branches: [], recentCommits: [] };
     else if (path === "/api/v1/launch") body = launch();
@@ -103,11 +103,81 @@ test("a stale dialog cannot approve a command that was never shown", async ({ pa
 test("analyzer file and module names remain distinct command choices", async ({ page }) => {
   await mockLiveHost(page);
   await page.getByRole("button", { name: "Search symbols or commands" }).click();
-  await page.getByRole("textbox", { name: "Search symbols or commands" }).fill("game.py");
+  await page.getByRole("textbox", { name: "Search symbols or commands" }).fill("game");
   const dialog = page.getByRole("dialog", { name: "Search code and run commands" });
-  await expect(dialog.getByRole("option", { name: "game.py module", exact: true })).toBeVisible();
-  await dialog.getByRole("option", { name: "game.py file", exact: true }).click();
+  await expect(dialog.getByRole("option", { name: "tictactoe.game module", exact: true })).toBeVisible();
+  await dialog.getByRole("option", { name: "tictactoe/game.py file", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Symbol details" })).toContainText("file:tictactoe/game.py");
+});
+
+test("every entity can be revealed and imported initialization can be traced beyond a value", async ({ page }) => {
+  const sourceRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/source") sourceRequests.push(url.searchParams.get("path")!);
+  });
+  const state = await mockLiveHost(page, "navigation");
+  const document = normalizeGraphPayload({ generation: 7, graph: state.graph });
+  await expect(page.getByRole("button", { name: /^Repository/ })).toHaveAttribute("data-active", "true");
+  const choose = async (node: typeof document.nodes[number]) => {
+    await page.getByRole("button", { name: "Search symbols or commands", exact: true }).click();
+    await page.getByRole("textbox", { name: "Search symbols or commands" }).fill(node.qualifiedName);
+    const duplicates = document.nodes.filter((item) => item.kind === node.kind && item.label === node.label).length > 1;
+    const option = duplicates
+      ? page.getByRole("option").filter({ has: page.getByText(`${node.qualifiedName}${node.source ? ` · ${node.source.path}:${node.source.start.line}` : ""}`, { exact: true }) })
+      : page.getByRole("option", { name: `${node.label} ${node.kind}`, exact: true });
+    await option.click();
+    await expect(page.getByRole("complementary", { name: "Symbol details" }).locator(".qualified-name")).toHaveText(node.qualifiedName);
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export graph JSON" }).click();
+    const exported = JSON.parse(readFileSync((await (await downloadPromise).path())!, "utf8"));
+    expect(exported.nodes.map((item: { id: string }) => item.id)).toContain(node.id);
+    if (node.source) await expect(page.locator(".source-view__path")).toContainText(node.source.path);
+  };
+  await page.getByRole("button", { name: /^Entry Focus/ }).click();
+  const file = document.nodes.find((node) => node.kind === "file" && node.label === "api/__init__.py")!;
+  await choose(file);
+  const inspector = page.getByRole("complementary", { name: "Symbol details" });
+  await expect(inspector.locator(".flow-path")).toContainText(["main.py"]);
+  await expect(inspector.locator("details.members")).not.toHaveAttribute("open", "");
+  await inspector.locator("details.members summary").click();
+  await expect(inspector.getByRole("region", { name: "Contained members" })).toBeVisible();
+  await inspector.locator("details.members summary").click();
+  await inspector.getByTitle("Inspect imports relationship with api.routes.search.$local.router", { exact: true }).click();
+  const relationship = page.getByRole("complementary", { name: "Relationship details" });
+  await expect(relationship).toContainText("imports relationship");
+  await relationship.getByRole("button", { name: "api.routes.search.$local.router", exact: true }).click();
+  await expect(page.locator(".source-view__path")).toContainText("api/routes/search.py");
+  await inspector.getByRole("button", { name: "In api.routes.search module", exact: true }).click();
+  await expect(inspector.locator(".qualified-name")).toHaveText("api.routes.search");
+  for (const kind of ["directory", "package", "file", "module", "class", "function", "method", "variable"] as const) {
+    const node = document.nodes.find((item) => item.kind === kind && item.source?.path !== "independent.py")!;
+    await choose(node);
+  }
+  await page.getByRole("button", { name: /^Entry Focus/ }).click();
+  await choose(document.nodes.find((node) => node.qualifiedName === "independent.outside")!);
+  await expect(page.getByRole("button", { name: /^Repository/ })).toHaveAttribute("data-active", "true");
+  await inspector.getByTitle("Inspect calls relationship with independent.outside", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Selected flow", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const recursiveDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export graph JSON" }).click();
+  const recursiveGraph = JSON.parse(readFileSync((await (await recursiveDownload).path())!, "utf8"));
+  expect(recursiveGraph.edges).toHaveLength(1);
+  expect(recursiveGraph.edges[0].source).toBe(recursiveGraph.edges[0].target);
+  await choose(document.nodes.find((node) => node.kind === "module" && node.qualifiedName === "api.service")!);
+  await inspector.getByTitle("Inspect api calls relationship with json.loads", { exact: true }).click();
+  const trace = page.getByRole("combobox", { name: "Select any relationship in the filtered graph" });
+  const exactExternalEdge = await trace.inputValue();
+  expect(exactExternalEdge).not.toBe("");
+  await trace.selectOption(exactExternalEdge);
+  await expect(trace).toHaveValue(exactExternalEdge);
+  await expect(page.getByRole("complementary", { name: "Relationship details" })).toContainText("json.loads");
+  await choose(document.nodes.find((node) => node.qualifiedName === "api.create_app.$local.app")!);
+  expect(sourceRequests.every((path) => path.endsWith(".py"))).toBe(true);
+  await choose(file);
+  await expect(inspector.getByTitle("Inspect imports relationship with api.routes.search.$local.router", { exact: true })).toBeVisible();
+  mkdirSync("/tmp/code-view-navigation/critique", { recursive: true });
+  await page.screenshot({ path: "/tmp/code-view-navigation/critique/navigation-browser.png", animations: "disabled" });
 });
 
 test("relationship Inspector keeps aggregate evidence selected as occurrences change", async ({ page }) => {

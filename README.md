@@ -159,15 +159,18 @@ workers before exiting.
 
 ## The 60-second tour
 
-- `Repository` shows every indexed node and relationship in the current filters.
+- `Repository` opens by default and shows every indexed node and relationship in the current filters.
 - `Entry Focus` shows the complete statically reachable flow from the detected
-  or configured entry.
+  or configured entry, including imported-module and package initialization.
 - `All connections` restores every relationship in the filtered graph.
 - `Selected flow` creates a readable caller/selection/dependency view.
 - `Trace` reaches every filtered relationship, including those outside the
   focused flow.
 - The Inspector shows qualified names, source, occurrences, boundary reasons,
   and Git evidence.
+- Search reveals the exact indexed entity, opening collapsed ancestors and adjusting
+  scope or filters when needed. File labels show relative paths; module labels show
+  qualified names. Inspector owner and member links navigate the hierarchy.
 - The filter button controls node kinds, relationship kinds, tests, and changed
   only mode.
 - `Fit` shows an overview; `Reset` restores the viewport.
